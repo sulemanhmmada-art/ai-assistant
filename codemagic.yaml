@@ -8,13 +8,10 @@ flutter: stable
 java: 17
 scripts:
 - name: Create Android directory
-script: |
-flutter create . --platforms=android
+  script: flutter create . --platforms=android
 - name: Get dependencies
-script: |
-flutter pub get
+script: flutter pub get
 - name: Build APK
-script: |
-flutter build apk --release
+script: flutter build apk --release
 artifacts:
 - build/app/outputs/flutter-apk/app-release.apk
