@@ -36,7 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
-  static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
+  static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev';
 
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
