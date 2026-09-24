@@ -45,7 +45,7 @@ bool _isLoading = false;
 bool _isListening = false;
 
 // ⚠️ غيّر هذا الرابط إلى رابط Cloudflare Worker الخاص بك
-static const String WORKER_URL = 'https://gemini-proxy.suleimanhmmada.workers.dev';
+static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
 
 @override
 void initState() {
