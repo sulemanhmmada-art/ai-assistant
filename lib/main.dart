@@ -91,7 +91,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
     setState(() {
-      _messages.add({'role': 'assistant', 'content': 'خطأ في الاتصال'});
+      _messages.add({'role': 'assistant', 'content': 'خطا: $e'});
     });
   } finally {
     setState(() => _isLoading = false);
