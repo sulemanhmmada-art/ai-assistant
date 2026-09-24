@@ -7,7 +7,7 @@ environment:
 flutter: stable
 java: 17
 scripts:
-- name: Setup Flutter project
+- name: Create Android directory
 script: |
 flutter create . --platforms=android
 - name: Get dependencies
