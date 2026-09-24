@@ -38,7 +38,7 @@ final ScrollController _scrollController = ScrollController();
 final List<Map<String, String>> _messages = [];
 bool _isLoading = false;
 
-static const String WORKER_URL = 'https://gemini-proxy.suleimanhmmada.workers.dev';
+static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
 
 @override
 void initState() {
