@@ -12,7 +12,7 @@ workflows:
       - name: Create Android directory
         script: flutter create . --platforms=android
 
-      - name: Add Internet permission
+      - name: Add permissions
         script: |
           python3 - <<'PY'
           from pathlib import Path
@@ -20,40 +20,25 @@ workflows:
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           text = manifest.read_text()
 
-          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+          permissions = [
+              '<uses-permission android:name="android.permission.INTERNET"/>',
+              '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>',
+              '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>',
+              '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
+              '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>'
+          ]
 
-          if permission not in text:
-              lines = text.splitlines()
+          lines = text.splitlines()
+          new_perms = [p for p in permissions if p not in text]
+          if new_perms:
               for i, line in enumerate(lines):
                   if '<manifest ' in line:
-                      lines.insert(i + 1, '    ' + permission)
+                      for j, p in enumerate(new_perms):
+                          lines.insert(i + 1 + j, '    ' + p)
                       break
               manifest.write_text('\n'.join(lines) + '\n')
 
-          print("Internet permission configured successfully.")
-          PY
-
-      - name: Add storage permissions
-        script: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          text = manifest.read_text()
-
-          read_perm = '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>'
-          read_media = '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>'
-
-          if read_perm not in text or read_media not in text:
-              lines = text.splitlines()
-              for i, line in enumerate(lines):
-                  if '<manifest ' in line:
-                      lines.insert(i + 1, '    ' + read_perm)
-                      lines.insert(i + 2, '    ' + read_media)
-                      break
-              manifest.write_text('\n'.join(lines) + '\n')
-
-          print("Storage permissions configured successfully.")
+          print("Permissions configured successfully.")
           PY
 
       - name: Get dependencies
