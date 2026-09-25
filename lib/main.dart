@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'dart:convert';
 
 void main() {
@@ -9,19 +9,19 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-@override
-Widget build(BuildContext context) {
-  return MaterialApp(
-    title: 'اختبار',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      primarySwatch: Colors.blue,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: const Color(0xFF1A1A2E),
-    ),
-    home: const ChatScreen(),
-  );
- }
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'المساعد الذكي',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF1A1A2E),
+      ),
+      home: const ChatScreen(),
+    );
+  }
 }
 
 class ChatScreen extends StatefulWidget {
@@ -48,14 +48,22 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.clear();
 
     try {
-      final response = await http.post(
-        Uri.parse(WORKER_URL),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'message': text}),
+      final dio = Dio();
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 60);
+
+      final response = await dio.post(
+        WORKER_URL,
+        data: {'message': text},
+        options: Options(
+          headers: {'Content-Type': 'application/json'},
+          responseType: ResponseType.plain,
+        ),
       );
 
       if (response.statusCode == 200) {
-        final lines = response.body.split('\n');
+        final responseBody = response.data.toString();
+        final lines = responseBody.split('\n');
         String fullReply = '';
         for (final line in lines) {
           if (line.startsWith('data: ')) {
@@ -90,93 +98,93 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     } catch (e) {
-    setState(() {
-      _messages.add({'role': 'assistant', 'content': 'خطا: $e'});
-    });
-  } finally {
-    setState(() => _isLoading = false);
+      setState(() {
+        _messages.add({'role': 'assistant', 'content': 'خطأ: $e'});
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
-}
 
-@override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('المساعد الذكي'),
-      centerTitle: true,
-      backgroundColor: const Color(0xFF16213E),
-    ),
-    body: Column(
-      children: [
-        Expanded(
-          child: _messages.isEmpty
-              ? const Center(
-                  child: Text(
-                    'مرحباً! اكتب رسالتك.',
-                    style: TextStyle(fontSize: 18, color: Colors.white70),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = _messages[index];
-                    final isUser = msg['role'] == 'user';
-                    return Align(
-                      alignment: isUser ? Alignment.centerLeft : Alignment.centerRight,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isUser ? Colors.blue[700] : const Color(0xFF0F3460),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          msg['content'] ?? '',
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-        if (_isLoading)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: CircularProgressIndicator(),
-          ),
-        Container(
-          padding: const EdgeInsets.all(8),
-          color: const Color(0xFF16213E),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'اكتب رسالتك...',
-                    hintStyle: const TextStyle(color: Colors.white54),
-                    filled: true,
-                    fillColor: const Color(0xFF1A1A2E),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('المساعد الذكي'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF16213E),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _messages.isEmpty
+                ? const Center(
+                    child: Text(
+                      'مرحباً! اكتب رسالتك.',
+                      style: TextStyle(fontSize: 18, color: Colors.white70),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _messages[index];
+                      final isUser = msg['role'] == 'user';
+                      return Align(
+                        alignment: isUser ? Alignment.centerLeft : Alignment.centerRight,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isUser ? Colors.blue[700] : const Color(0xFF0F3460),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            msg['content'] ?? '',
+                            style: const TextStyle(color: Colors.white, fontSize: 16),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  onSubmitted: _sendMessage,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.send, color: Colors.blue),
-                onPressed: () => _sendMessage(_controller.text),
-              ),
-            ],
           ),
-        ),
-      ],
-    ),
-  );
-}
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: CircularProgressIndicator(),
+            ),
+          Container(
+            padding: const EdgeInsets.all(8),
+            color: const Color(0xFF16213E),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'اكتب رسالتك...',
+                      hintStyle: const TextStyle(color: Colors.white54),
+                      filled: true,
+                      fillColor: const Color(0xFF1A1A2E),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onSubmitted: _sendMessage,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send, color: Colors.blue),
+                  onPressed: () => _sendMessage(_controller.text),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
