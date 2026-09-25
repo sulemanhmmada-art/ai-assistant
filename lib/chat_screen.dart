@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
+import 'package:image_picker/image_picker.dart';
+import 'memory_service.dart';
 import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -33,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _conversations = [];
   String? _currentConversationId;
   bool _isLoading = false;
+  bool _isGeneratingImage = false;
 
   static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
   static const String IMAGE_WORKER_URL = 'https://image-proxy.sulemanhmmada.workers.dev/';
@@ -45,28 +48,16 @@ class _ChatScreenState extends State<ChatScreen> {
       : 'Welcome to TalkGPT!\n\nTap + to start a new chat.';
   String get _hintText => _isArabic ? 'اكتب رسالتك...' : 'Type your message...';
   String get _settingsText => _isArabic ? 'الإعدادات' : 'Settings';
-  String get _memoryText => _isArabic ? 'الذاكرة الشخصية' : 'Personal Memory';
   String get _cancelText => _isArabic ? 'إلغاء' : 'Cancel';
-  String get _saveText => _isArabic ? 'حفظ' : 'Save';
   String get _copyText => _isArabic ? 'نسخ' : 'Copy';
   String get _copiedText => _isArabic ? 'تم النسخ ✅' : 'Copied ✅';
   String get _noConversationsText => _isArabic ? 'لا توجد محادثات' : 'No conversations';
-  String get _memoryHint => _isArabic
-      ? 'مثال: اسمي أحمد، أدرس الهندسة...'
-      : 'e.g., My name is Ahmed, I study engineering...';
-  String get _memoryDescription => _isArabic
-      ? 'سيتم إرسال هذه المعلومات مع كل رسالة.'
-      : 'This will be sent with every message.';
-  String get _generateImageText => _isArabic ? 'توليد صورة' : 'Generate Image';
-  String get _imageDescriptionHint => _isArabic
-      ? 'مثال: قطة تلعب في الحديقة، رسم فني'
-      : 'e.g., A cat playing in the garden, artistic style';
-  String get _generateText => _isArabic ? 'توليد' : 'Generate';
-  String get _generatingText => _isArabic ? 'جاري التوليد...' : 'Generating...';
-  String get _imageGeneratedText => _isArabic ? '🎨 صورة مولّدة' : '🎨 Generated image';
   String get _saveToGalleryText => _isArabic ? 'حفظ في المعرض' : 'Save to Gallery';
-  String get _savedText => _isArabic ? 'تم الحفظ في المعرض ✅' : 'Saved to gallery ✅';
+  String get _savedText => _isArabic ? 'تم الحفظ ✅' : 'Saved ✅';
+  String get _imageGeneratedText => _isArabic ? '🎨 صورة مولّدة' : '🎨 Generated image';
   String get _imageErrorText => _isArabic ? 'فشل توليد الصورة' : 'Failed to generate image';
+  String get _uploadImageText => _isArabic ? 'رفع صورة' : 'Upload Image';
+  String get _imagePromptHint => _isArabic ? 'اكتب وصف التعديل...' : 'Describe your edit...';
 
   @override
   void initState() {
@@ -75,19 +66,14 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadConversations() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('conversations');
-    if (saved != null) {
-      final List<dynamic> list = jsonDecode(saved);
-      setState(() {
-        _conversations = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      });
-    }
+    final convs = await MemoryService.loadConversations();
+    setState(() {
+      _conversations = convs;
+    });
   }
 
   Future<void> _saveConversations() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('conversations', jsonEncode(_conversations));
+    await MemoryService.saveConversations(_conversations);
   }
 
   Map<String, dynamic>? get _currentConversation {
@@ -120,14 +106,12 @@ class _ChatScreenState extends State<ChatScreen> {
       _currentConversationId = newConv['id'] as String;
     });
     await _saveConversations();
-    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _selectConversation(String id) async {
     setState(() {
       _currentConversationId = id;
     });
-    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _deleteConversation(String id) async {
@@ -140,16 +124,71 @@ class _ChatScreenState extends State<ChatScreen> {
     await _saveConversations();
   }
 
-  Future<String> _getPersonalMemory() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('personal_memory') ?? '';
+  /// كشف إذا كانت الرسالة تطلب توليد صورة
+  bool _isImageRequest(String text) {
+    final lower = text.toLowerCase();
+    final keywords = [
+      'ارسم', 'ارسملي', 'ارسم لي',
+      'صورة', 'صور', 'صورلي',
+      'أنشئ صورة', 'انشئ صورة',
+      'ولّد صورة', 'ولد صورة',
+      'generate image', 'create image', 'draw',
+      'make an image', 'make a picture',
+    ];
+    return keywords.any((k) => lower.contains(k));
+  }
+
+  /// استخراج الوصف من طلب توليد الصورة
+  String _extractImagePrompt(String text) {
+    final removeWords = [
+      'ارسم لي', 'ارسملي', 'ارسم',
+      'أنشئ صورة', 'انشئ صورة', 'أنشئ', 'انشئ',
+      'ولّد صورة', 'ولد صورة', 'ولّد', 'ولد',
+      'صورة', 'صور',
+      'generate image', 'create image', 'make an image', 'make a picture',
+      'draw', 'of', 'a picture', 'an image',
+    ];
+    String result = text;
+    for (final w in removeWords) {
+      result = result.replaceAll(w, ' ');
+    }
+    return result.trim();
   }
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _currentConversationId == null) return;
 
+    // حفظ المعلومات تلقائياً في الذاكرة
+    await MemoryService.extractFacts(text);
+
     final messages = _currentMessages;
+
+    // كشف إذا كانت الرسالة تطلب توليد صورة
+    if (_isImageRequest(text)) {
+      final prompt = _extractImagePrompt(text);
+      messages.add({
+        'role': 'user',
+        'content': text,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      _controller.clear();
+      for (var c in _conversations) {
+        if (c['id'] == _currentConversationId) {
+          c['messages'] = messages;
+          if (messages.length == 1) {
+            c['title'] = text.length > 30 ? text.substring(0, 30) : text;
+          }
+        }
+      }
+      await _saveConversations();
+      setState(() {});
+      _scrollToBottom();
+      await _generateImage(prompt);
+      return;
+    }
+
+    // إرسال كرسالة عادية
     messages.add({
       'role': 'user',
       'content': text,
@@ -173,9 +212,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final memory = await _getPersonalMemory();
+      final memory = await MemoryService.getMemoryAsText();
       final fullMessage = memory.isNotEmpty
-          ? 'سياق شخصي عن المستخدم: $memory\n\nرسالة المستخدم: $text'
+          ? '$memory\n\nرسالة المستخدم: $text'
           : text;
 
       final dio = Dio();
@@ -254,27 +293,9 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _generateImage(String prompt) async {
     if (prompt.trim().isEmpty || _currentConversationId == null) return;
 
-    final messages = _currentMessages;
-    messages.add({
-      'role': 'user',
-      'content': '🎨 $_generateImageText: $prompt',
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-
     setState(() {
-      _isLoading = true;
+      _isGeneratingImage = true;
     });
-
-    for (var c in _conversations) {
-      if (c['id'] == _currentConversationId) {
-        c['messages'] = messages;
-        if (messages.length == 1) {
-          c['title'] = prompt.length > 30 ? prompt.substring(0, 30) : prompt;
-        }
-      }
-    }
-    await _saveConversations();
-    _scrollToBottom();
 
     try {
       final dio = Dio();
@@ -284,9 +305,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final response = await dio.post(
         IMAGE_WORKER_URL,
         data: {'prompt': prompt},
-        options: Options(
-          headers: {'Content-Type': 'application/json'},
-        ),
+        options: Options(headers: {'Content-Type': 'application/json'}),
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
@@ -330,7 +349,129 @@ class _ChatScreenState extends State<ChatScreen> {
       await _saveConversations();
       setState(() {});
     } finally {
-      setState(() => _isLoading = false);
+      setState(() => _isGeneratingImage = false);
+      _scrollToBottom();
+    }
+  }
+
+  Future<void> _pickAndEditImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final base64Image = base64Encode(bytes);
+
+    if (!mounted) return;
+    final controller = TextEditingController();
+    final prompt = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _uploadImageText,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: _imagePromptHint,
+            hintStyle: const TextStyle(color: Colors.white38),
+            filled: true,
+            fillColor: const Color(0xFF1A1A2E),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(_cancelText),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: Text(_isArabic ? 'تعديل' : 'Edit'),
+          ),
+        ],
+      ),
+    );
+
+    if (prompt == null || prompt.isEmpty) return;
+    await _generateImageFromImage(base64Image, prompt);
+  }
+
+  Future<void> _generateImageFromImage(String base64Image, String prompt) async {
+    if (_currentConversationId == null) return;
+
+    final messages = _currentMessages;
+    messages.add({
+      'role': 'user',
+      'content': '🖼️ $prompt',
+      'image_input': base64Image,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    setState(() {
+      _isGeneratingImage = true;
+    });
+
+    for (var c in _conversations) {
+      if (c['id'] == _currentConversationId) {
+        c['messages'] = messages;
+        if (messages.length == 1) {
+          c['title'] = prompt.length > 30 ? prompt.substring(0, 30) : prompt;
+        }
+      }
+    }
+    await _saveConversations();
+    _scrollToBottom();
+
+    try {
+      final dio = Dio();
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 120);
+
+      final response = await dio.post(
+        IMAGE_WORKER_URL,
+        data: {'prompt': prompt, 'image': base64Image},
+        options: Options(headers: {'Content-Type': 'application/json'}),
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final base64Result = response.data['image'] as String;
+        final newMessages = _currentMessages;
+        newMessages.add({
+          'role': 'assistant',
+          'content': _imageGeneratedText,
+          'image': base64Result,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        for (var c in _conversations) {
+          if (c['id'] == _currentConversationId) {
+            c['messages'] = newMessages;
+          }
+        }
+        await _saveConversations();
+        setState(() {});
+      }
+    } catch (e) {
+      final errMessages = _currentMessages;
+      errMessages.add({'role': 'assistant', 'content': '$_imageErrorText: $e'});
+      for (var c in _conversations) {
+        if (c['id'] == _currentConversationId) {
+          c['messages'] = errMessages;
+        }
+      }
+      await _saveConversations();
+      setState(() {});
+    } finally {
+      setState(() => _isGeneratingImage = false);
       _scrollToBottom();
     }
   }
@@ -368,111 +509,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _showImageDialog() async {
-    final promptController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          _generateImageText,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: TextField(
-          controller: promptController,
-          maxLines: 4,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: _imageDescriptionHint,
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: const Color(0xFF1A1A2E),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_cancelText),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            onPressed: () {
-              final prompt = promptController.text.trim();
-              if (prompt.isNotEmpty) {
-                Navigator.pop(context);
-                _generateImage(prompt);
-              }
-            },
-            child: Text(_generateText),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openMemoryDialog() async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentMemory = prefs.getString('personal_memory') ?? '';
-    final memoryController = TextEditingController(text: currentMemory);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          _memoryText,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _memoryDescription,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: memoryController,
-              maxLines: 5,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: _memoryHint,
-                hintStyle: const TextStyle(color: Colors.white38),
-                filled: true,
-                fillColor: const Color(0xFF1A1A2E),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_cancelText),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            onPressed: () async {
-              await prefs.setString('personal_memory', memoryController.text);
-              if (mounted) Navigator.pop(context);
-            },
-            child: Text(_saveText),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _openSettings() async {
     final result = await Navigator.push(
       context,
@@ -500,71 +536,48 @@ class _ChatScreenState extends State<ChatScreen> {
     return Directionality(
       textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
+        backgroundColor: const Color(0xFF0E1116),
         appBar: AppBar(
+          backgroundColor: const Color(0xFF0E1116),
+          elevation: 0,
           leading: Builder(
             builder: (context) => IconButton(
-              icon: const Icon(Icons.menu),
+              icon: const Icon(Icons.menu, color: Colors.white),
               onPressed: () => Scaffold.of(context).openDrawer(),
             ),
           ),
           title: Text(
             _currentConversation?['title'] ?? 'TalkGPT',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 17,
+            ),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.psychology),
-              tooltip: _memoryText,
-              onPressed: _openMemoryDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: _settingsText,
+              icon: const Icon(Icons.settings, color: Colors.white70),
               onPressed: _openSettings,
             ),
           ],
         ),
         drawer: _buildDrawer(),
         body: _currentConversationId == null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_outline,
-                        size: 100,
-                        color: Colors.white.withValues(alpha: 0.2),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        _welcomeText,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          color: Colors.white70,
-                          height: 1.6,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
+            ? _buildWelcomeScreen()
             : Column(
                 children: [
                   Expanded(
                     child: ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: messages.length + (_isLoading ? 1 : 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      itemCount: messages.length + (_isLoading || _isGeneratingImage ? 1 : 0),
                       itemBuilder: (context, index) {
-                        if (index == messages.length && _isLoading) {
+                        if (index == messages.length && (_isLoading || _isGeneratingImage)) {
                           return _buildTypingIndicator();
                         }
                         final msg = messages[index];
                         final isUser = msg['role'] == 'user';
-                        return _buildMessageBubble(msg, isUser);
+                        return _buildMessageBubble(msg, isUser, index);
                       },
                     ),
                   ),
@@ -574,68 +587,114 @@ class _ChatScreenState extends State<ChatScreen> {
         floatingActionButton: _currentConversationId == null
             ? FloatingActionButton.extended(
                 onPressed: _createNewConversation,
-                backgroundColor: Colors.blue,
+                backgroundColor: const Color(0xFF10A37F),
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: Text(
-                  _newChatText,
-                  style: const TextStyle(color: Colors.white),
-                ),
+                label: Text(_newChatText, style: const TextStyle(color: Colors.white)),
               )
             : null,
       ),
     );
   }
 
-  Widget _buildDrawer() {
-    return Drawer(
-      backgroundColor: const Color(0xFF16213E),
-      child: SafeArea(
+  Widget _buildWelcomeScreen() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10A37F).withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.auto_awesome,
+                size: 60,
+                color: Color(0xFF10A37F),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'TalkGPT',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _welcomeText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.white60,
+                height: 1.6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: const Color(0xFF0E1116),
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  const CircleAvatar(
-                    backgroundColor: Colors.blue,
-                    child: Icon(Icons.smart_toy, color: Colors.white),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10A37F),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 12),
                   const Text(
                     'TalkGPT',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
             ),
-            const Divider(color: Colors.white24),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: ElevatedButton.icon(
-                onPressed: _createNewConversation,
+                onPressed: () {
+                  Navigator.pop(context);
+                  _createNewConversation();
+                },
                 icon: const Icon(Icons.add),
                 label: Text(_newChatText),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
+                  backgroundColor: const Color(0xFF10A37F),
                   foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ),
-            const Divider(color: Colors.white24),
+            const SizedBox(height: 12),
+            const Divider(color: Colors.white12),
             Expanded(
               child: _conversations.isEmpty
                   ? Center(
                       child: Text(
                         _noConversationsText,
-                        style: const TextStyle(color: Colors.white54),
+                        style: const TextStyle(color: Colors.white38),
                       ),
                     )
                   : ListView.builder(
@@ -645,11 +704,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         final isSelected = conv['id'] == _currentConversationId;
                         return ListTile(
                           selected: isSelected,
-                          selectedTileColor: Colors.blue.withValues(alpha: 0.2),
-                          leading: const Icon(
-                            Icons.chat_bubble_outline,
-                            color: Colors.white70,
-                          ),
+                          selectedTileColor: const Color(0xFF10A37F).withValues(alpha: 0.15),
+                          leading: const Icon(Icons.chat_bubble_outline, color: Colors.white60, size: 20),
                           title: Text(
                             conv['title']?.toString() ?? _newChatText,
                             style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -657,26 +713,21 @@ class _ChatScreenState extends State<ChatScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: Colors.red,
-                              size: 20,
-                            ),
-                            onPressed: () =>
-                                _deleteConversation(conv['id'] as String),
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                            onPressed: () => _deleteConversation(conv['id'] as String),
                           ),
-                          onTap: () => _selectConversation(conv['id'] as String),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectConversation(conv['id'] as String);
+                          },
                         );
                       },
                     ),
             ),
-            const Divider(color: Colors.white24),
+            const Divider(color: Colors.white12),
             ListTile(
               leading: const Icon(Icons.settings, color: Colors.white70),
-              title: Text(
-                _settingsText,
-                style: const TextStyle(color: Colors.white),
-              ),
+              title: Text(_settingsText, style: const TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
                 _openSettings();
@@ -688,205 +739,98 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageBubble(Map<String, dynamic> msg, bool isUser) {
+  Widget _buildMessageBubble(Map<String, dynamic> msg, bool isUser, int index) {
     final hasImage = msg['image'] != null;
+    final hasInputImage = msg['image_input'] != null;
 
-    return GestureDetector(
-      onLongPress: () {
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: const Color(0xFF16213E),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          builder: (context) => SafeArea(
+    return Column(
+      crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: isUser
+              ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
+              : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.all(14),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.82,
+            ),
+            decoration: BoxDecoration(
+              color: isUser ? const Color(0xFF10A37F) : const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(18),
+            ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ListTile(
-                  leading: const Icon(Icons.copy, color: Colors.white),
-                  title: Text(
-                    _copyText,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(_copiedText),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                ),
-                if (hasImage)
-                  ListTile(
-                    leading: const Icon(Icons.download, color: Colors.green),
-                    title: Text(
-                      _saveToGalleryText,
-                      style: const TextStyle(color: Colors.white),
+                if (hasInputImage)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(
+                      base64Decode(msg['image_input'] as String),
+                      fit: BoxFit.cover,
+                      height: 150,
                     ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _saveImageToGallery(msg['image'] as String);
-                    },
+                  ),
+                if (hasInputImage) const SizedBox(height: 8),
+                if (hasImage)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(
+                      base64Decode(msg['image'] as String),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text('فشل عرض الصورة', style: TextStyle(color: Colors.white)),
+                      ),
+                    ),
+                  ),
+                if (hasImage) const SizedBox(height: 8),
+                if (!hasImage || (msg['content']?.toString().isNotEmpty ?? false))
+                  SelectableText(
+                    msg['content']?.toString() ?? '',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: widget.fontSize,
+                      height: 1.5,
+                    ),
+                    textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
                   ),
               ],
             ),
           ),
-        );
-      },
-      child: Align(
-        alignment: isUser
-            ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
-            : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.all(14),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.8,
+        ),
+        Padding(
+          padding: EdgeInsets.only(
+            left: isUser ? 0 : 8,
+            right: isUser ? 8 : 0,
           ),
-          decoration: BoxDecoration(
-            color: isUser ? Colors.blue[700] : const Color(0xFF0F3460),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: hasImage
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          child: PopupMenuButton<String>(
+            icon: const Icon(Icons.more_horiz, color: Colors.white38, size: 18),
+            color: const Color(0xFF1E1E1E),
+            onSelected: (value) async {
+              if (value == 'copy') {
+                await Clipboard.setData(
+                  ClipboardData(text: msg['content']?.toString() ?? ''),
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(_copiedText), duration: const Duration(seconds: 1)),
+                  );
+                }
+              } else if (value == 'save' && hasImage) {
+                await _saveImageToGallery(msg['image'] as String);
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'copy',
+                child: Row(
                   children: [
-                    Text(
-                      msg['content']?.toString() ?? '',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: widget.fontSize,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.memory(
-                        base64Decode(msg['image'] as String),
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          padding: const EdgeInsets.all(20),
-                          child: const Text(
-                            'فشل عرض الصورة',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'اضغط مطولاً للحفظ',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
-                    ),
+                    const Icon(Icons.copy, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Text(_copyText, style: const TextStyle(color: Colors.white)),
                   ],
-                )
-              : SelectableText(
-                  msg['content']?.toString() ?? '',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: widget.fontSize,
-                    height: 1.5,
-                  ),
-                  textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTypingIndicator() {
-    return Align(
-      alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F3460),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.blue.withValues(alpha: 0.3),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.blue.withValues(alpha: 0.15),
-              blurRadius: 10,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (i) => _buildDot(i)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDot(int index) {
-    return AnimatedContainer(
-      duration: Duration(milliseconds: 600 + (index * 200)),
-      margin: const EdgeInsets.symmetric(horizontal: 3),
-      height: 10,
-      width: 10,
-      decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.6 + (index * 0.2)),
-        shape: BoxShape.circle,
-      ),
-    );
-  }
-
-  Widget _buildInputBar() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      color: const Color(0xFF16213E),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
-              child: TextField(
-                controller: _controller,
-                style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
-                maxLines: null,
-                minLines: 1,
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-                textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                decoration: InputDecoration(
-                  hintText: _hintText,
-                  hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
-                  filled: true,
-                  fillColor: const Color(0xFF1A1A2E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 14,
-                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.image, color: Colors.purple),
-            tooltip: _generateImageText,
-            onPressed: _currentConversationId != null ? _showImageDialog : null,
-          ),
-          IconButton(
-            icon: const Icon(Icons.send, color: Colors.blue),
-            onPressed: _sendMessage,
-          ),
-        ],
-      ),
-    );
-  }
-}
+             
