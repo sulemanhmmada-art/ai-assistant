@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'memory_service.dart';
 
 class LockScreen extends StatefulWidget {
-  final VoidCallback onUnlocked;
+  final Function(String) onUnlocked;
   const LockScreen({super.key, required this.onUnlocked});
 
   @override
@@ -15,7 +15,6 @@ class _LockScreenState extends State<LockScreen> {
   bool _isFirstTime = true;
   bool _showError = false;
   bool _isLoading = true;
-  bool _isArabic = true;
 
   @override
   void initState() {
@@ -47,7 +46,7 @@ class _LockScreenState extends State<LockScreen> {
 
     final success = await MemoryService.setPassword(pass);
     if (success) {
-      widget.onUnlocked();
+      widget.onUnlocked(pass);
     }
   }
 
@@ -55,7 +54,7 @@ class _LockScreenState extends State<LockScreen> {
     final pass = _controller.text.trim();
     final valid = await MemoryService.verifyPassword(pass);
     if (valid) {
-      widget.onUnlocked();
+      widget.onUnlocked(pass);
     } else {
       setState(() => _showError = true);
     }
@@ -71,7 +70,7 @@ class _LockScreenState extends State<LockScreen> {
     }
 
     return Directionality(
-      textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+      textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: const Color(0xFF0E1116),
         body: Center(
@@ -94,9 +93,7 @@ class _LockScreenState extends State<LockScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  _isFirstTime
-                      ? (_isArabic ? 'إنشاء كلمة مرور' : 'Create Password')
-                      : (_isArabic ? 'أدخل كلمة المرور' : 'Enter Password'),
+                  _isFirstTime ? 'إنشاء كلمة مرور' : 'أدخل كلمة المرور',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
@@ -106,12 +103,8 @@ class _LockScreenState extends State<LockScreen> {
                 const SizedBox(height: 12),
                 Text(
                   _isFirstTime
-                      ? (_isArabic
-                          ? 'كلمة المرور تحمي ذاكرتك المؤبدة بتشفير AES-256'
-                          : 'Password protects your memory with AES-256 encryption')
-                      : (_isArabic
-                          ? 'بياناتك مشفّرة، أدخل كلمة المرور للوصول'
-                          : 'Your data is encrypted, enter password to access'),
+                      ? 'كلمة المرور تحمي ذاكرتك المؤبدة بتشفير AES-256'
+                      : 'بياناتك مشفّرة، أدخل كلمة المرور للوصول',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white54, fontSize: 14),
                 ),
@@ -121,7 +114,7 @@ class _LockScreenState extends State<LockScreen> {
                   obscureText: true,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: _isArabic ? 'كلمة المرور' : 'Password',
+                    hintText: 'كلمة المرور',
                     hintStyle: const TextStyle(color: Colors.white38),
                     filled: true,
                     fillColor: const Color(0xFF1E1E1E),
@@ -139,7 +132,7 @@ class _LockScreenState extends State<LockScreen> {
                     obscureText: true,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: _isArabic ? 'تأكيد كلمة المرور' : 'Confirm Password',
+                      hintText: 'تأكيد كلمة المرور',
                       hintStyle: const TextStyle(color: Colors.white38),
                       filled: true,
                       fillColor: const Color(0xFF1E1E1E),
@@ -155,10 +148,8 @@ class _LockScreenState extends State<LockScreen> {
                   const SizedBox(height: 12),
                   Text(
                     _isFirstTime
-                        ? (_isArabic
-                            ? 'كلمة المرور قصيرة أو غير متطابقة'
-                            : 'Password too short or doesn\'t match')
-                        : (_isArabic ? 'كلمة المرور خاطئة' : 'Wrong password'),
+                        ? 'كلمة المرور قصيرة أو غير متطابقة'
+                        : 'كلمة المرور خاطئة',
                     style: const TextStyle(color: Colors.redAccent, fontSize: 14),
                   ),
                 ],
@@ -176,20 +167,16 @@ class _LockScreenState extends State<LockScreen> {
                       ),
                     ),
                     child: Text(
-                      _isFirstTime
-                          ? (_isArabic ? 'إنشاء وحفظ' : 'Create & Save')
-                          : (_isArabic ? 'دخول' : 'Unlock'),
+                      _isFirstTime ? 'إنشاء وحفظ' : 'دخول',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  _isArabic
-                      ? '🔒 كلمة المرور تُخزَّن كـ Hash فقط، لا يمكن استرجاعها'
-                      : '🔒 Password stored as hash only, cannot be recovered',
+                const Text(
+                  '🔒 كلمة المرور تُخزَّن كـ Hash فقط، لا يمكن استرجاعها',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
               ],
             ),
