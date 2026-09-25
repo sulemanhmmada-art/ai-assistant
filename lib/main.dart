@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
@@ -12,7 +13,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'المساعد الذكي',
+      title: 'TalkGPT',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
@@ -38,6 +39,33 @@ class _ChatScreenState extends State<ChatScreen> {
 
   static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
 
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+  }
+
+  Future<void> _loadMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('messages');
+    if (saved != null) {
+      final List<dynamic> list = jsonDecode(saved);
+      setState(() {
+        _messages.addAll(list.map((e) => Map<String, String>.from(e)));
+      });
+    }
+  }
+
+  Future<void> _saveMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('messages', jsonEncode(_messages));
+  }
+
+  Future<String> _getPersonalMemory() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('personal_memory') ?? '';
+  }
+
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
 
@@ -46,15 +74,21 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoading = true;
     });
     _controller.clear();
+    await _saveMessages();
 
     try {
+      final memory = await _getPersonalMemory();
+      final fullMessage = memory.isNotEmpty
+          ? 'سياق شخصي عن المستخدم: $memory\n\nرسالة المستخدم: $text'
+          : text;
+
       final dio = Dio();
       dio.options.connectTimeout = const Duration(seconds: 30);
       dio.options.receiveTimeout = const Duration(seconds: 60);
 
       final response = await dio.post(
         WORKER_URL,
-        data: {'message': text},
+        data: {'message': fullMessage},
         options: Options(
           headers: {'Content-Type': 'application/json'},
           responseType: ResponseType.plain,
@@ -92,36 +126,137 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _messages.add({'role': 'assistant', 'content': fullReply});
         });
+        await _saveMessages();
       } else {
         setState(() {
           _messages.add({'role': 'assistant', 'content': 'خطأ: ${response.statusCode}'});
         });
+        await _saveMessages();
       }
     } catch (e) {
       setState(() {
         _messages.add({'role': 'assistant', 'content': 'خطأ: $e'});
       });
+      await _saveMessages();
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _clearChat() async {
+    setState(() => _messages.clear());
+    await _saveMessages();
+  }
+
+  Future<void> _openMemoryDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentMemory = prefs.getString('personal_memory') ?? '';
+    final memoryController = TextEditingController(text: currentMemory);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text('الذاكرة الشخصية', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'أدخل معلوماتك الشخصية (الاسم، الدراسة، الاهتمامات...).\nسيتم إرسالها مع كل رسالة.',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: memoryController,
+              maxLines: 5,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'مثال: اسمي أحمد، أدرس الهندسة في جامعة دمشق...',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF1A1A2E),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await prefs.setString('personal_memory', memoryController.text);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('تم حفظ الذاكرة الشخصية ✅')),
+              );
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('المساعد الذكي'),
+        title: const Text('TalkGPT'),
         centerTitle: true,
         backgroundColor: const Color(0xFF16213E),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.psychology),
+            tooltip: 'الذاكرة الشخصية',
+            onPressed: _openMemoryDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'حذف الدردشة',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: const Color(0xFF16213E),
+                  title: const Text('حذف الدردشة', style: TextStyle(color: Colors.white)),
+                  content: const Text('هل تريد حذف كل الرسائل؟', style: TextStyle(color: Colors.white70)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('إلغاء'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _clearChat();
+                      },
+                      child: const Text('حذف'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
           Expanded(
             child: _messages.isEmpty
                 ? const Center(
-                    child: Text(
-                      'مرحباً! اكتب رسالتك.',
-                      style: TextStyle(fontSize: 18, color: Colors.white70),
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'مرحباً بك في TalkGPT!\n\nاكتب رسالتك للبدء.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 18, color: Colors.white70),
+                      ),
                     ),
                   )
                 : ListView.builder(
@@ -135,6 +270,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Container(
                           margin: const EdgeInsets.symmetric(vertical: 6),
                           padding: const EdgeInsets.all(12),
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.8,
+                          ),
                           decoration: BoxDecoration(
                             color: isUser ? Colors.blue[700] : const Color(0xFF0F3460),
                             borderRadius: BorderRadius.circular(16),
