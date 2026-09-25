@@ -12,6 +12,36 @@ workflows:
       - name: Create Android directory
         script: flutter create . --platforms=android
 
+      - name: Set compileSdk and targetSdk
+        script: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle_file = Path("android/app/build.gradle")
+          if gradle_file.exists():
+              text = gradle_file.read_text()
+              # compileSdk = 36 (مطلوب من file_picker)
+              text = text.replace("compileSdkVersion 34", "compileSdkVersion 36")
+              text = text.replace("compileSdk 34", "compileSdk 36")
+              text = text.replace("compileSdkVersion flutter.compileSdkVersion", "compileSdkVersion 36")
+              text = text.replace("compileSdk = flutter.compileSdkVersion", "compileSdk = 36")
+              # targetSdk = 33 (أندرويد 13 - يطابق هاتفك)
+              text = text.replace("targetSdkVersion 34", "targetSdkVersion 33")
+              text = text.replace("targetSdk 34", "targetSdk 33")
+              text = text.replace("targetSdkVersion flutter.targetSdkVersion", "targetSdkVersion 33")
+              text = text.replace("targetSdk = flutter.targetSdkVersion", "targetSdk = 33")
+              gradle_file.write_text(text)
+              print("Updated: compileSdk=36, targetSdk=33")
+
+          gradle_kts = Path("android/app/build.gradle.kts")
+          if gradle_kts.exists():
+              text = gradle_kts.read_text()
+              text = text.replace("compileSdk = flutter.compileSdkVersion", "compileSdk = 36")
+              text = text.replace("targetSdk = flutter.targetSdkVersion", "targetSdk = 33")
+              gradle_kts.write_text(text)
+              print("Updated gradle.kts")
+          PY
+
       - name: Add permissions
         script: |
           python3 - <<'PY'
@@ -24,8 +54,7 @@ workflows:
               '<uses-permission android:name="android.permission.INTERNET"/>',
               '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>',
               '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>',
-              '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
-              '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>'
+              '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>'
           ]
 
           lines = text.splitlines()
