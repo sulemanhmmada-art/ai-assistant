@@ -33,6 +33,29 @@ workflows:
           print("Internet permission configured successfully.")
           PY
 
+      - name: Add storage permissions
+        script: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+
+          read_perm = '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>'
+          read_media = '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>'
+
+          if read_perm not in text or read_media not in text:
+              lines = text.splitlines()
+              for i, line in enumerate(lines):
+                  if '<manifest ' in line:
+                      lines.insert(i + 1, '    ' + read_perm)
+                      lines.insert(i + 2, '    ' + read_media)
+                      break
+              manifest.write_text('\n'.join(lines) + '\n')
+
+          print("Storage permissions configured successfully.")
+          PY
+
       - name: Get dependencies
         script: flutter pub get
 
