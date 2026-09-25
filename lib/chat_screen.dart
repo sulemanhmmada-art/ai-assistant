@@ -29,7 +29,6 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _conversations = [];
   String? _currentConversationId;
   bool _isLoading = false;
-  bool _isRTL = true;
 
   static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
 
@@ -42,15 +41,19 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _hintText => _isArabic ? 'اكتب رسالتك...' : 'Type your message...';
   String get _settingsText => _isArabic ? 'الإعدادات' : 'Settings';
   String get _memoryText => _isArabic ? 'الذاكرة الشخصية' : 'Personal Memory';
-  String get _deleteText => _isArabic ? 'حذف' : 'Delete';
   String get _cancelText => _isArabic ? 'إلغاء' : 'Cancel';
+  String get _saveText => _isArabic ? 'حفظ' : 'Save';
   String get _copyText => _isArabic ? 'نسخ' : 'Copy';
   String get _copiedText => _isArabic ? 'تم النسخ ✅' : 'Copied ✅';
+  String get _noConversationsText => _isArabic ? 'لا توجد محادثات' : 'No conversations';
+  String get _memoryHint => _isArabic ? 'مثال: اسمي أحمد، أدرس الهندسة...' : 'e.g., My name is Ahmed, I study engineering...';
+  String get _memoryDescription => _isArabic
+      ? 'سيتم إرسال هذه المعلومات مع كل رسالة.'
+      : 'This will be sent with every message.';
 
   @override
   void initState() {
     super.initState();
-    _isRTL = _isArabic;
     _loadConversations();
   }
 
@@ -60,7 +63,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (saved != null) {
       final List<dynamic> list = jsonDecode(saved);
       setState(() {
-        _conversations = list.map((e) => Map<String, dynamic>.from(e)).toList();
+        _conversations = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       });
     }
   }
@@ -72,20 +75,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Map<String, dynamic>? get _currentConversation {
     if (_currentConversationId == null) return null;
-    return _conversations.firstWhere(
-      (c) => c['id'] == _currentConversationId,
-      orElse: () => {},
-    );
+    for (final c in _conversations) {
+      if (c['id'] == _currentConversationId) return c;
+    }
+    return null;
   }
 
   List<Map<String, dynamic>> get _currentMessages {
     final conv = _currentConversation;
-    if (conv == null || conv.isEmpty) return [];
-    return List<Map<String, dynamic>>.from(conv['messages'] ?? []);
+    if (conv == null) return [];
+    final messages = conv['messages'];
+    if (messages == null) return [];
+    return List<Map<String, dynamic>>.from(
+      (messages as List).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
   }
 
   Future<void> _createNewConversation() async {
-    final newConv = {
+    final newConv = <String, dynamic>{
       'id': const Uuid().v4(),
       'title': _newChatText,
       'messages': <Map<String, dynamic>>[],
@@ -93,17 +100,17 @@ class _ChatScreenState extends State<ChatScreen> {
     };
     setState(() {
       _conversations.insert(0, newConv);
-      _currentConversationId = newConv['id'];
+      _currentConversationId = newConv['id'] as String;
     });
     await _saveConversations();
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _selectConversation(String id) async {
     setState(() {
       _currentConversationId = id;
     });
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _deleteConversation(String id) async {
@@ -116,22 +123,6 @@ class _ChatScreenState extends State<ChatScreen> {
     await _saveConversations();
   }
 
-  Future<void> _updateConversation() async {
-    if (_currentConversationId == null) return;
-    final messages = _currentMessages;
-    for (var c in _conversations) {
-      if (c['id'] == _currentConversationId) {
-        c['messages'] = messages;
-        if (messages.isNotEmpty) {
-          final firstMsg = messages.first['content']?.toString() ?? '';
-          c['title'] = firstMsg.length > 30 ? firstMsg.substring(0, 30) : firstMsg;
-        }
-      }
-    }
-    await _saveConversations();
-    setState(() {});
-  }
-
   Future<String> _getPersonalMemory() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('personal_memory') ?? '';
@@ -142,7 +133,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty || _currentConversationId == null) return;
 
     final messages = _currentMessages;
-    messages.add({'role': 'user', 'content': text, 'timestamp': DateTime.now().toIso8601String()});
+    messages.add({
+      'role': 'user',
+      'content': text,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
 
     setState(() {
       _isLoading = true;
@@ -205,10 +200,16 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         }
 
-        if (fullReply.isEmpty) fullReply = _isArabic ? 'عذراً، لم أستطع توليد رد.' : 'Sorry, no reply.';
+        if (fullReply.isEmpty) {
+          fullReply = _isArabic ? 'عذراً، لم أستطع توليد رد.' : 'Sorry, no reply.';
+        }
 
         final newMessages = _currentMessages;
-        newMessages.add({'role': 'assistant', 'content': fullReply, 'timestamp': DateTime.now().toIso8601String()});
+        newMessages.add({
+          'role': 'assistant',
+          'content': fullReply,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
         for (var c in _conversations) {
           if (c['id'] == _currentConversationId) {
             c['messages'] = newMessages;
@@ -216,10 +217,26 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         await _saveConversations();
         setState(() {});
+      } else {
+        final errMessages = _currentMessages;
+        errMessages.add({
+          'role': 'assistant',
+          'content': 'خطأ: ${response.statusCode}',
+        });
+        for (var c in _conversations) {
+          if (c['id'] == _currentConversationId) {
+            c['messages'] = errMessages;
+          }
+        }
+        await _saveConversations();
+        setState(() {});
       }
     } catch (e) {
       final errMessages = _currentMessages;
-      errMessages.add({'role': 'assistant', 'content': 'خطأ: $e'});
+      errMessages.add({
+        'role': 'assistant',
+        'content': 'خطأ: $e',
+      });
       for (var c in _conversations) {
         if (c['id'] == _currentConversationId) {
           c['messages'] = errMessages;
@@ -255,14 +272,15 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF16213E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(_memoryText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          _memoryText,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              _isArabic
-                  ? 'سيتم إرسال هذه المعلومات مع كل رسالة.'
-                  : 'This will be sent with every message.',
+              _memoryDescription,
               style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -271,7 +289,7 @@ class _ChatScreenState extends State<ChatScreen> {
               maxLines: 5,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: _isArabic ? 'مثال: اسمي أحمد...' : 'e.g., My name is Ahmed...',
+                hintText: _memoryHint,
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF1A1A2E),
@@ -294,7 +312,7 @@ class _ChatScreenState extends State<ChatScreen> {
               await prefs.setString('personal_memory', memoryController.text);
               if (mounted) Navigator.pop(context);
             },
-            child: Text(_isArabic ? 'حفظ' : 'Save'),
+            child: Text(_saveText),
           ),
         ],
       ),
@@ -324,10 +342,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final messages = _currentMessages;
-    final isRTL = _isRTL;
 
     return Directionality(
-      textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
+      textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         appBar: AppBar(
           leading: Builder(
@@ -361,12 +378,20 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.chat_bubble_outline, size: 100, color: Colors.white.withOpacity(0.2)),
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        size: 100,
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                       const SizedBox(height: 20),
                       Text(
                         _welcomeText,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 18, color: Colors.white70, height: 1.6),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          color: Colors.white70,
+                          height: 1.6,
+                        ),
                       ),
                     ],
                   ),
@@ -397,7 +422,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 onPressed: _createNewConversation,
                 backgroundColor: Colors.blue,
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: Text(_newChatText, style: const TextStyle(color: Colors.white)),
+                label: Text(
+                  _newChatText,
+                  style: const TextStyle(color: Colors.white),
+                ),
               )
             : null,
       ),
@@ -419,7 +447,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Icon(Icons.smart_toy, color: Colors.white),
                   ),
                   const SizedBox(width: 12),
-                  Text(
+                  const Text(
                     'TalkGPT',
                     style: TextStyle(
                       color: Colors.white,
@@ -441,7 +469,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -450,7 +480,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: _conversations.isEmpty
                   ? Center(
                       child: Text(
-                        _isArabic ? 'لا توجد محادثات' : 'No conversations',
+                        _noConversationsText,
                         style: const TextStyle(color: Colors.white54),
                       ),
                     )
@@ -461,19 +491,27 @@ class _ChatScreenState extends State<ChatScreen> {
                         final isSelected = conv['id'] == _currentConversationId;
                         return ListTile(
                           selected: isSelected,
-                          selectedTileColor: Colors.blue.withOpacity(0.2),
-                          leading: const Icon(Icons.chat_bubble_outline, color: Colors.white70),
+                          selectedTileColor: Colors.blue.withValues(alpha: 0.2),
+                          leading: const Icon(
+                            Icons.chat_bubble_outline,
+                            color: Colors.white70,
+                          ),
                           title: Text(
-                            conv['title'] ?? _newChatText,
+                            conv['title']?.toString() ?? _newChatText,
                             style: const TextStyle(color: Colors.white, fontSize: 14),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                            onPressed: () => _deleteConversation(conv['id']),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                              size: 20,
+                            ),
+                            onPressed: () =>
+                                _deleteConversation(conv['id'] as String),
                           ),
-                          onTap: () => _selectConversation(conv['id']),
+                          onTap: () => _selectConversation(conv['id'] as String),
                         );
                       },
                     ),
@@ -481,7 +519,10 @@ class _ChatScreenState extends State<ChatScreen> {
             const Divider(color: Colors.white24),
             ListTile(
               leading: const Icon(Icons.settings, color: Colors.white70),
-              title: Text(_settingsText, style: const TextStyle(color: Colors.white)),
+              title: Text(
+                _settingsText,
+                style: const TextStyle(color: Colors.white),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _openSettings();
@@ -508,12 +549,17 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.copy, color: Colors.white),
-                  title: Text(_copyText, style: const TextStyle(color: Colors.white)),
+                  title: Text(
+                    _copyText,
+                    style: const TextStyle(color: Colors.white),
+                  ),
                   onTap: () {
-                    // Copy to clipboard
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(_copiedText), duration: const Duration(seconds: 1)),
+                      SnackBar(
+                        content: Text(_copiedText),
+                        duration: const Duration(seconds: 1),
+                      ),
                     );
                   },
                 ),
@@ -524,24 +570,26 @@ class _ChatScreenState extends State<ChatScreen> {
       },
       child: Align(
         alignment: isUser
-            ? (_isRTL ? Alignment.centerRight : Alignment.centerLeft)
-            : (_isRTL ? Alignment.centerLeft : Alignment.centerRight),
+            ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
+            : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.all(14),
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.8,
+          ),
           decoration: BoxDecoration(
             color: isUser ? Colors.blue[700] : const Color(0xFF0F3460),
             borderRadius: BorderRadius.circular(18),
           ),
           child: SelectableText(
-            msg['content'] ?? '',
+            msg['content']?.toString() ?? '',
             style: TextStyle(
               color: Colors.white,
               fontSize: widget.fontSize,
               height: 1.5,
             ),
-            textDirection: _isRTL ? TextDirection.rtl : TextDirection.ltr,
+            textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
           ),
         ),
       ),
@@ -550,17 +598,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildTypingIndicator() {
     return Align(
-      alignment: _isRTL ? Alignment.centerLeft : Alignment.centerRight,
+      alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
           color: const Color(0xFF0F3460),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
+          border: Border.all(
+            color: Colors.blue.withValues(alpha: 0.3),
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.blue.withOpacity(0.15),
+              color: Colors.blue.withValues(alpha: 0.15),
               blurRadius: 10,
               spreadRadius: 1,
             ),
@@ -581,7 +632,7 @@ class _ChatScreenState extends State<ChatScreen> {
       height: 10,
       width: 10,
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.6 + (index * 0.2)),
+        color: Colors.blue.withValues(alpha: 0.6 + (index * 0.2)),
         shape: BoxShape.circle,
       ),
     );
@@ -604,7 +655,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 minLines: 1,
                 keyboardType: TextInputType.multiline,
                 textInputAction: TextInputAction.newline,
-                textDirection: _isRTL ? TextDirection.rtl : TextDirection.ltr,
+                textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
                 decoration: InputDecoration(
                   hintText: _hintText,
                   hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
@@ -614,7 +665,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
                 ),
               ),
             ),
