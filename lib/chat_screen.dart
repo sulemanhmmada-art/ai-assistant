@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:gal/gal.dart';
 import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -31,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = false;
 
   static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
+  static const String IMAGE_WORKER_URL = 'https://image-proxy.sulemanhmmada.workers.dev/';
 
   bool get _isArabic => widget.locale.languageCode == 'ar';
 
@@ -46,10 +51,22 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _copyText => _isArabic ? 'نسخ' : 'Copy';
   String get _copiedText => _isArabic ? 'تم النسخ ✅' : 'Copied ✅';
   String get _noConversationsText => _isArabic ? 'لا توجد محادثات' : 'No conversations';
-  String get _memoryHint => _isArabic ? 'مثال: اسمي أحمد، أدرس الهندسة...' : 'e.g., My name is Ahmed, I study engineering...';
+  String get _memoryHint => _isArabic
+      ? 'مثال: اسمي أحمد، أدرس الهندسة...'
+      : 'e.g., My name is Ahmed, I study engineering...';
   String get _memoryDescription => _isArabic
       ? 'سيتم إرسال هذه المعلومات مع كل رسالة.'
       : 'This will be sent with every message.';
+  String get _generateImageText => _isArabic ? 'توليد صورة' : 'Generate Image';
+  String get _imageDescriptionHint => _isArabic
+      ? 'مثال: قطة تلعب في الحديقة، رسم فني'
+      : 'e.g., A cat playing in the garden, artistic style';
+  String get _generateText => _isArabic ? 'توليد' : 'Generate';
+  String get _generatingText => _isArabic ? 'جاري التوليد...' : 'Generating...';
+  String get _imageGeneratedText => _isArabic ? '🎨 صورة مولّدة' : '🎨 Generated image';
+  String get _saveToGalleryText => _isArabic ? 'حفظ في المعرض' : 'Save to Gallery';
+  String get _savedText => _isArabic ? 'تم الحفظ في المعرض ✅' : 'Saved to gallery ✅';
+  String get _imageErrorText => _isArabic ? 'فشل توليد الصورة' : 'Failed to generate image';
 
   @override
   void initState() {
@@ -217,11 +234,82 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         await _saveConversations();
         setState(() {});
+      }
+    } catch (e) {
+      final errMessages = _currentMessages;
+      errMessages.add({'role': 'assistant', 'content': 'خطأ: $e'});
+      for (var c in _conversations) {
+        if (c['id'] == _currentConversationId) {
+          c['messages'] = errMessages;
+        }
+      }
+      await _saveConversations();
+      setState(() {});
+    } finally {
+      setState(() => _isLoading = false);
+      _scrollToBottom();
+    }
+  }
+
+  Future<void> _generateImage(String prompt) async {
+    if (prompt.trim().isEmpty || _currentConversationId == null) return;
+
+    final messages = _currentMessages;
+    messages.add({
+      'role': 'user',
+      'content': '🎨 $_generateImageText: $prompt',
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    for (var c in _conversations) {
+      if (c['id'] == _currentConversationId) {
+        c['messages'] = messages;
+        if (messages.length == 1) {
+          c['title'] = prompt.length > 30 ? prompt.substring(0, 30) : prompt;
+        }
+      }
+    }
+    await _saveConversations();
+    _scrollToBottom();
+
+    try {
+      final dio = Dio();
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 120);
+
+      final response = await dio.post(
+        IMAGE_WORKER_URL,
+        data: {'prompt': prompt},
+        options: Options(
+          headers: {'Content-Type': 'application/json'},
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final base64Image = response.data['image'] as String;
+        final newMessages = _currentMessages;
+        newMessages.add({
+          'role': 'assistant',
+          'content': _imageGeneratedText,
+          'image': base64Image,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        for (var c in _conversations) {
+          if (c['id'] == _currentConversationId) {
+            c['messages'] = newMessages;
+          }
+        }
+        await _saveConversations();
+        setState(() {});
       } else {
         final errMessages = _currentMessages;
         errMessages.add({
           'role': 'assistant',
-          'content': 'خطأ: ${response.statusCode}',
+          'content': '$_imageErrorText: ${response.statusCode}',
         });
         for (var c in _conversations) {
           if (c['id'] == _currentConversationId) {
@@ -233,10 +321,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
       final errMessages = _currentMessages;
-      errMessages.add({
-        'role': 'assistant',
-        'content': 'خطأ: $e',
-      });
+      errMessages.add({'role': 'assistant', 'content': '$_imageErrorText: $e'});
       for (var c in _conversations) {
         if (c['id'] == _currentConversationId) {
           c['messages'] = errMessages;
@@ -260,6 +345,75 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+
+  Future<void> _saveImageToGallery(String base64Image) async {
+    try {
+      final bytes = base64Decode(base64Image);
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/talkgpt_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(bytes);
+      await Gal.putImage(file.path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_savedText), duration: const Duration(seconds: 2)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), duration: const Duration(seconds: 2)),
+        );
+      }
+    }
+  }
+
+  Future<void> _showImageDialog() async {
+    final promptController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _generateImageText,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: promptController,
+          maxLines: 4,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: _imageDescriptionHint,
+            hintStyle: const TextStyle(color: Colors.white38),
+            filled: true,
+            fillColor: const Color(0xFF1A1A2E),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(_cancelText),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            onPressed: () {
+              final prompt = promptController.text.trim();
+              if (prompt.isNotEmpty) {
+                Navigator.pop(context);
+                _generateImage(prompt);
+              }
+            },
+            child: Text(_generateText),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openMemoryDialog() async {
@@ -535,6 +689,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(Map<String, dynamic> msg, bool isUser) {
+    final hasImage = msg['image'] != null;
+
     return GestureDetector(
       onLongPress: () {
         showModalBottomSheet(
@@ -563,6 +719,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
                   },
                 ),
+                if (hasImage)
+                  ListTile(
+                    leading: const Icon(Icons.download, color: Colors.green),
+                    title: Text(
+                      _saveToGalleryText,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _saveImageToGallery(msg['image'] as String);
+                    },
+                  ),
               ],
             ),
           ),
@@ -582,15 +750,49 @@ class _ChatScreenState extends State<ChatScreen> {
             color: isUser ? Colors.blue[700] : const Color(0xFF0F3460),
             borderRadius: BorderRadius.circular(18),
           ),
-          child: SelectableText(
-            msg['content']?.toString() ?? '',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: widget.fontSize,
-              height: 1.5,
-            ),
-            textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-          ),
+          child: hasImage
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      msg['content']?.toString() ?? '',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: widget.fontSize,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(
+                        base64Decode(msg['image'] as String),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          padding: const EdgeInsets.all(20),
+                          child: const Text(
+                            'فشل عرض الصورة',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'اضغط مطولاً للحفظ',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                    ),
+                  ],
+                )
+              : SelectableText(
+                  msg['content']?.toString() ?? '',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: widget.fontSize,
+                    height: 1.5,
+                  ),
+                  textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                ),
         ),
       ),
     );
@@ -674,6 +876,11 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.image, color: Colors.purple),
+            tooltip: _generateImageText,
+            onPressed: _currentConversationId != null ? _showImageDialog : null,
+          ),
           IconButton(
             icon: const Icon(Icons.send, color: Colors.blue),
             onPressed: _sendMessage,
