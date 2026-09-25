@@ -39,7 +39,7 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
       _fontSize = prefs.getDouble('font_size') ?? 14.0;
       _geminiLanguage = prefs.getString('gemini_language') ?? 'ar';
       _hasPassword = hasPass;
-      _unlocked = !hasPass;
+      _unlocked = false;
       _loaded = true;
     });
   }
