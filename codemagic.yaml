@@ -33,10 +33,6 @@ workflows:
           print("Internet permission configured successfully.")
           PY
 
-      - name: Set app name
-        script: |
-          sed -i 's/android:label="[^"]*"/android:label="TalkGPT"/' android/app/src/main/AndroidManifest.xml
-
       - name: Get dependencies
         script: flutter pub get
 
