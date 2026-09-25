@@ -6,12 +6,14 @@ class SettingsScreen extends StatefulWidget {
   final double fontSize;
   final String geminiLanguage;
   final Locale locale;
+  final String password;
 
   const SettingsScreen({
     super.key,
     required this.fontSize,
     required this.geminiLanguage,
     required this.locale,
+    required this.password,
   });
 
   @override
@@ -56,34 +58,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  Future<void> _exportMemory() async {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isArabic
-              ? 'ميزة التصدير ستُضاف قريباً'
-              : 'Export coming soon'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  Future<void> _importMemory() async {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isArabic
-              ? 'ميزة الاستيراد ستُضاف قريباً'
-              : 'Import coming soon'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
   Future<void> _showMemoryContent() async {
-    final memory = await MemoryService.loadMemory();
+    final memory = await MemoryService.loadMemory(widget.password);
     final facts = List<dynamic>.from(memory['facts'] ?? []);
 
     if (!mounted) return;
@@ -135,6 +111,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _changePassword() async {
+    final oldController = TextEditingController();
+    final newController = TextEditingController();
+    final confirmController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _isArabic ? 'تغيير كلمة المرور' : 'Change Password',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: oldController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: _isArabic ? 'كلمة المرور الحالية' : 'Current password',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF1E1E1E),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: newController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: _isArabic ? 'كلمة المرور الجديدة' : 'New password',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF1E1E1E),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmController,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: _isArabic ? 'تأكيد كلمة المرور' : 'Confirm password',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF1E1E1E),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(_isArabic ? 'إلغاء' : 'Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10A37F)),
+            onPressed: () async {
+              if (newController.text.trim().length < 4) return;
+              if (newController.text.trim() != confirmController.text.trim()) return;
+
+              final success = await MemoryService.changePassword(
+                oldController.text.trim(),
+                newController.text.trim(),
+              );
+
+              if (mounted) Navigator.pop(context, success);
+            },
+            child: Text(_isArabic ? 'حفظ' : 'Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isArabic ? '✅ تم تغيير كلمة المرور' : '✅ Password changed'),
+        ),
+      );
+    } else if (result == false && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isArabic ? '❌ كلمة المرور القديمة خاطئة' : '❌ Old password is wrong'),
+        ),
+      );
+    }
   }
 
   @override
@@ -260,6 +341,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const Divider(color: Colors.white12),
+            _sectionTitle(_isArabic ? 'الأمان' : 'Security'),
+            ListTile(
+              leading: const Icon(Icons.lock, color: Color(0xFF10A37F)),
+              title: Text(
+                _isArabic ? 'تغيير كلمة المرور' : 'Change Password',
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _isArabic ? 'يتطلب كلمة المرور الحالية' : 'Requires current password',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              onTap: _changePassword,
+            ),
+            const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'الذاكرة المؤبدة' : 'Permanent Memory'),
             ListTile(
               leading: const Icon(Icons.visibility, color: Color(0xFF10A37F)),
@@ -268,30 +363,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: const TextStyle(color: Colors.white),
               ),
               onTap: _showMemoryContent,
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_file, color: Color(0xFF10A37F)),
-              title: Text(
-                _isArabic ? 'تصدير الذاكرة' : 'Export Memory',
-                style: const TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                _isArabic ? 'قريباً' : 'Coming soon',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              onTap: _exportMemory,
-            ),
-            ListTile(
-              leading: const Icon(Icons.download, color: Color(0xFF10A37F)),
-              title: Text(
-                _isArabic ? 'استيراد الذاكرة' : 'Import Memory',
-                style: const TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                _isArabic ? 'قريباً' : 'Coming soon',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              onTap: _importMemory,
             ),
             const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'البيانات' : 'Data'),
@@ -324,7 +395,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                         onPressed: () async {
-                          await MemoryService.saveConversations([]);
+                          await MemoryService.saveConversations([], widget.password);
                           if (mounted) {
                             Navigator.pop(context);
                             _returnResult();
@@ -370,7 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'facts': <String>[],
                             'userName': '',
                             'preferences': <String>[],
-                          });
+                          }, widget.password);
                           if (mounted) {
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -394,7 +465,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const ListTile(
               leading: Icon(Icons.info_outline, color: Color(0xFF10A37F)),
               title: Text('TalkGPT', style: TextStyle(color: Colors.white)),
-              subtitle: Text('v6.0.0', style: TextStyle(color: Colors.white54)),
+              subtitle: Text('v7.0.0', style: TextStyle(color: Colors.white54)),
             ),
             const SizedBox(height: 20),
           ],
@@ -405,18 +476,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _geminiLanguageName() {
     switch (_geminiLanguage) {
-      case 'ar':
-        return 'العربية';
-      case 'en':
-        return 'English';
-      case 'fr':
-        return 'Français';
-      case 'es':
-        return 'Español';
-      case 'tr':
-        return 'Türkçe';
-      default:
-        return 'العربية';
+      case 'ar': return 'العربية';
+      case 'en': return 'English';
+      case 'fr': return 'Français';
+      case 'es': return 'Español';
+      case 'tr': return 'Türkçe';
+      default: return 'العربية';
     }
   }
 
