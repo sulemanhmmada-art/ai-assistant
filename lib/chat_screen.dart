@@ -833,4 +833,108 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
               ),
-             
+              if (hasImage)
+                PopupMenuItem(
+                  value: 'save',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.download, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Text(_saveToGalleryText, style: const TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Align(
+      alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFF10A37F).withValues(alpha: 0.3), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF10A37F).withValues(alpha: 0.15),
+              blurRadius: 10,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) => _buildDot(i)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDot(int index) {
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 600 + (index * 200)),
+      margin: const EdgeInsets.symmetric(horizontal: 3),
+      height: 10,
+      width: 10,
+      decoration: BoxDecoration(
+        color: const Color(0xFF10A37F).withValues(alpha: 0.6 + (index * 0.2)),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      color: const Color(0xFF0E1116),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline, color: Colors.white70, size: 28),
+            onPressed: _pickAndEditImage,
+            tooltip: _uploadImageText,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
+              child: TextField(
+                controller: _controller,
+                style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
+                maxLines: null,
+                minLines: 1,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                decoration: InputDecoration(
+                  hintText: _hintText,
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                  filled: true,
+                  fillColor: const Color(0xFF1E1E1E),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.send, color: Color(0xFF10A37F)),
+            onPressed: _sendMessage,
+          ),
+        ],
+      ),
+    );
+  }
+}
