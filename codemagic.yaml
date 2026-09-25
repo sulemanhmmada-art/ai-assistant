@@ -9,59 +9,35 @@ workflows:
       java: 17
 
     scripts:
-      - name: Create Android
-directory
-        script: flutter create . 
---platforms=android
+      - name: Create Android directory
+        script: flutter create . --platforms=android
 
-      - name: Add Internet
-permission
+      - name: Add Internet permission
         script: |
           python3 - <<'PY'
           from pathlib import Path
 
-          manifest =
-Path("android/app/src/main/
-AndroidManifest.xml")
-          text =
-manifest.read_text()
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
 
-          permission =
-'<uses-permission
-android:name="android.permission.I
-NTERNET"/>'
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
 
-          if permission not in 
-text:
-              text = text.replace(
-                  '<manifest ',
-                  '<manifest ',
-                1
-                    )
-
-              lines =
-text.splitlines()
-              for i, line in 
-enumerate(lines):
-                  if '<manifest '
-in line:
-lines.insert(i + 1, '    ' +
-permission)
+          if permission not in text:
+              lines = text.splitlines()
+              for i, line in enumerate(lines):
+                  if '<manifest ' in line:
+                      lines.insert(i + 1, '    ' + permission)
                       break
+              manifest.write_text('\n'.join(lines) + '\n')
 
-manifest.write_text('\n'.join(lines) + '\n')
-
-          print("Internet
-permission configured
-successfully.")
+          print("Internet permission configured successfully.")
+          PY
 
       - name: Get dependencies
         script: flutter pub get
 
       - name: Build APK
-        script: flutter build apk
---release
+        script: flutter build apk --release
 
     artifacts:
-      - build/app/outputs/
-flutter-apk/app-release.apk
+      - build/app/outputs/flutter-apk/app-release.apk
