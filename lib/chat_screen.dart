@@ -372,143 +372,6 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  Future<void> _pickAndEditImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 60);
-    if (picked == null) return;
-
-    final bytes = await picked.readAsBytes();
-    final base64Image = base64Encode(bytes);
-
-    if (!mounted) return;
-    final controller = TextEditingController();
-    final prompt = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          _uploadImageText,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: _imagePromptHint,
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: const Color(0xFF1A1A2E),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_cancelText),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: Text(_isArabic ? 'تعديل' : 'Edit'),
-          ),
-        ],
-      ),
-    );
-
-    if (prompt == null || prompt.isEmpty) return;
-    await _generateImageFromImage(base64Image, prompt);
-  }
-
-  Future<void> _generateImageFromImage(String base64Image, String prompt) async {
-    if (_currentConversationId == null) return;
-
-    final messages = _currentMessages;
-    messages.add({
-      'role': 'user',
-      'content': '🖼️ $prompt',
-      'image_input': base64Image,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-
-    setState(() {
-      _isGeneratingImage = true;
-    });
-
-    for (var c in _conversations) {
-      if (c['id'] == _currentConversationId) {
-        c['messages'] = messages;
-        if (messages.length == 1) {
-          c['title'] = prompt.length > 30 ? prompt.substring(0, 30) : prompt;
-        }
-      }
-    }
-    await _saveConversations();
-    _scrollToBottom();
-
-    try {
-      final dio = Dio();
-      dio.options.connectTimeout = const Duration(seconds: 30);
-      dio.options.receiveTimeout = const Duration(seconds: 120);
-      dio.options.validateStatus = (status) => status != null && status < 500;
-
-      final response = await dio.post(
-        IMAGE_WORKER_URL,
-        data: {'prompt': prompt, 'image': base64Image},
-        options: Options(headers: {'Content-Type': 'application/json'}),
-      );
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final base64Result = response.data['image'] as String;
-        final newMessages = _currentMessages;
-        newMessages.add({
-          'role': 'assistant',
-          'content': _imageGeneratedText,
-          'image': base64Result,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        for (var c in _conversations) {
-          if (c['id'] == _currentConversationId) {
-            c['messages'] = newMessages;
-          }
-        }
-        await _saveConversations();
-        setState(() {});
-      } else {
-        final errorMsg = response.data['error'] ?? '$_imageErrorText: ${response.statusCode}';
-        final errMessages = _currentMessages;
-        errMessages.add({
-          'role': 'assistant',
-          'content': errorMsg.toString(),
-        });
-        for (var c in _conversations) {
-          if (c['id'] == _currentConversationId) {
-            c['messages'] = errMessages;
-          }
-        }
-        await _saveConversations();
-        setState(() {});
-      }
-    } catch (e) {
-      final errMessages = _currentMessages;
-      errMessages.add({'role': 'assistant', 'content': '$_imageErrorText: $e'});
-      for (var c in _conversations) {
-        if (c['id'] == _currentConversationId) {
-          c['messages'] = errMessages;
-        }
-      }
-      await _saveConversations();
-      setState(() {});
-    } finally {
-      setState(() => _isGeneratingImage = false);
-      _scrollToBottom();
-    }
-  }
-
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
@@ -588,12 +451,7 @@ class _ChatScreenState extends State<ChatScreen>
               fontSize: 17,
             ),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings, color: Colors.white70),
-              onPressed: _openSettings,
-            ),
-          ],
+          actions: const [],
         ),
         drawer: _buildDrawer(),
         body: _currentConversationId == null
@@ -834,11 +692,11 @@ class _ChatScreenState extends State<ChatScreen>
             ),
           ),
         ),
-        Padding(
-          padding: EdgeInsets.only(
-            left: isUser ? 8 : 0,
-            right: isUser ? 0 : 8,
-          ),
+        // 3 نقاط تحت الرسالة مباشرة — تتبع اتجاه النص
+        Align(
+          alignment: isUser
+              ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
+              : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
           child: PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, color: Colors.white38, size: 18),
             color: const Color(0xFF1E1E1E),
@@ -996,5 +854,142 @@ class _ChatScreenState extends State<ChatScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _pickAndEditImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 60);
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final base64Image = base64Encode(bytes);
+
+    if (!mounted) return;
+    final controller = TextEditingController();
+    final prompt = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _uploadImageText,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: _imagePromptHint,
+            hintStyle: const TextStyle(color: Colors.white38),
+            filled: true,
+            fillColor: const Color(0xFF1A1A2E),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(_cancelText),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: Text(_isArabic ? 'تعديل' : 'Edit'),
+          ),
+        ],
+      ),
+    );
+
+    if (prompt == null || prompt.isEmpty) return;
+    await _generateImageFromImage(base64Image, prompt);
+  }
+
+  Future<void> _generateImageFromImage(String base64Image, String prompt) async {
+    if (_currentConversationId == null) return;
+
+    final messages = _currentMessages;
+    messages.add({
+      'role': 'user',
+      'content': '🖼️ $prompt',
+      'image_input': base64Image,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    setState(() {
+      _isGeneratingImage = true;
+    });
+
+    for (var c in _conversations) {
+      if (c['id'] == _currentConversationId) {
+        c['messages'] = messages;
+        if (messages.length == 1) {
+          c['title'] = prompt.length > 30 ? prompt.substring(0, 30) : prompt;
+        }
+      }
+    }
+    await _saveConversations();
+    _scrollToBottom();
+
+    try {
+      final dio = Dio();
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 120);
+      dio.options.validateStatus = (status) => status != null && status < 500;
+
+      final response = await dio.post(
+        IMAGE_WORKER_URL,
+        data: {'prompt': prompt, 'image': base64Image},
+        options: Options(headers: {'Content-Type': 'application/json'}),
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final base64Result = response.data['image'] as String;
+        final newMessages = _currentMessages;
+        newMessages.add({
+          'role': 'assistant',
+          'content': _imageGeneratedText,
+          'image': base64Result,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        for (var c in _conversations) {
+          if (c['id'] == _currentConversationId) {
+            c['messages'] = newMessages;
+          }
+        }
+        await _saveConversations();
+        setState(() {});
+      } else {
+        final errorMsg = response.data['error'] ?? '$_imageErrorText: ${response.statusCode}';
+        final errMessages = _currentMessages;
+        errMessages.add({
+          'role': 'assistant',
+          'content': errorMsg.toString(),
+        });
+        for (var c in _conversations) {
+          if (c['id'] == _currentConversationId) {
+            c['messages'] = errMessages;
+          }
+        }
+        await _saveConversations();
+        setState(() {});
+      }
+    } catch (e) {
+      final errMessages = _currentMessages;
+      errMessages.add({'role': 'assistant', 'content': '$_imageErrorText: $e'});
+      for (var c in _conversations) {
+        if (c['id'] == _currentConversationId) {
+          c['messages'] = errMessages;
+        }
+      }
+      await _saveConversations();
+      setState(() {});
+    } finally {
+      setState(() => _isGeneratingImage = false);
+      _scrollToBottom();
+    }
   }
 }
