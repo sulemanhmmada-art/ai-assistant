@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:file_picker/file_picker.dart';
-import 'dart:io';
 import 'memory_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -59,91 +57,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _exportMemory() async {
-    try {
-      final memoryPath = await MemoryService.getMemoryPath();
-      final convPath = await MemoryService.getConversationsPath();
-      final memoryFile = File(memoryPath);
-
-      if (!await memoryFile.exists()) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_isArabic ? 'لا توجد ذاكرة للتصدير' : 'No memory to export')),
-          );
-        }
-        return;
-      }
-
-      final result = await FilePicker.platform.saveFile(
-        dialogTitle: _isArabic ? 'احفظ ملف الذاكرة' : 'Save memory file',
-        fileName: 'talkgpt_memory_backup.json',
-        type: FileType.custom,
-        allowedExtensions: ['json'],
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isArabic
+              ? 'ميزة التصدير ستُضاف قريباً'
+              : 'Export coming soon'),
+          duration: const Duration(seconds: 2),
+        ),
       );
-
-      if (result != null) {
-        final content = await memoryFile.readAsString();
-        final saveFile = File(result);
-        await saveFile.writeAsString(content);
-
-        final convFile = File(convPath);
-        if (await convFile.exists()) {
-          final convContent = await convFile.readAsString();
-          final convSavePath = result.replaceAll('talkgpt_memory_backup.json', 'talkgpt_conversations_backup.json');
-          final convSaveFile = File(convSavePath);
-          await convSaveFile.writeAsString(convContent);
-        }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_isArabic ? '✅ تم تصدير الذاكرة والمحادثات' : '✅ Memory and conversations exported'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
     }
   }
 
   Future<void> _importMemory() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        dialogTitle: _isArabic ? 'اختر ملف الذاكرة' : 'Select memory file',
-        type: FileType.custom,
-        allowedExtensions: ['json'],
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isArabic
+              ? 'ميزة الاستيراد ستُضاف قريباً'
+              : 'Import coming soon'),
+          duration: const Duration(seconds: 2),
+        ),
       );
-
-      if (result != null && result.files.single.path != null) {
-        final imported = await MemoryService.importMemoryFromFile(result.files.single.path!);
-        if (imported) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(_isArabic ? '✅ تم استيراد الذاكرة بنجاح' : '✅ Memory imported successfully'),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(_isArabic ? 'فشل الاستيراد' : 'Import failed')),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
     }
   }
 
@@ -177,7 +112,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('• ', style: TextStyle(color: Color(0xFF10A37F), fontSize: 18)),
+                        const Text(
+                          '• ',
+                          style: TextStyle(color: Color(0xFF10A37F), fontSize: 18),
+                        ),
                         Expanded(
                           child: Text(
                             facts[i].toString(),
@@ -222,7 +160,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionTitle(_isArabic ? 'المظهر' : 'Appearance'),
             ListTile(
               leading: const Icon(Icons.text_fields, color: Color(0xFF10A37F)),
-              title: Text(_isArabic ? 'حجم الخط' : 'Font Size', style: const TextStyle(color: Colors.white)),
+              title: Text(
+                _isArabic ? 'حجم الخط' : 'Font Size',
+                style: const TextStyle(color: Colors.white),
+              ),
               subtitle: Text(
                 '${_fontSize.toInt()} ${_isArabic ? "نقطة" : "pt"}',
                 style: const TextStyle(color: Colors.white54),
@@ -255,7 +196,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionTitle(_isArabic ? 'اللغة' : 'Language'),
             ListTile(
               leading: const Icon(Icons.language, color: Color(0xFF10A37F)),
-              title: Text(_isArabic ? 'لغة التطبيق' : 'App Language', style: const TextStyle(color: Colors.white)),
+              title: Text(
+                _isArabic ? 'لغة التطبيق' : 'App Language',
+                style: const TextStyle(color: Colors.white),
+              ),
               subtitle: Text(
                 _locale.languageCode == 'ar' ? 'العربية' : 'English',
                 style: const TextStyle(color: Colors.white54),
@@ -292,8 +236,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             ListTile(
               leading: const Icon(Icons.record_voice_over, color: Color(0xFF10A37F)),
-              title: Text(_isArabic ? 'لغة ردود الذكاء الاصطناعي' : 'AI Response Language', style: const TextStyle(color: Colors.white)),
-              subtitle: Text(_geminiLanguageName(), style: const TextStyle(color: Colors.white54)),
+              title: Text(
+                _isArabic ? 'لغة ردود الذكاء الاصطناعي' : 'AI Response Language',
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _geminiLanguageName(),
+                style: const TextStyle(color: Colors.white54),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -313,23 +263,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionTitle(_isArabic ? 'الذاكرة المؤبدة' : 'Permanent Memory'),
             ListTile(
               leading: const Icon(Icons.visibility, color: Color(0xFF10A37F)),
-              title: Text(_isArabic ? 'عرض محتوى الذاكرة' : 'View Memory Content', style: const TextStyle(color: Colors.white)),
+              title: Text(
+                _isArabic ? 'عرض محتوى الذاكرة' : 'View Memory Content',
+                style: const TextStyle(color: Colors.white),
+              ),
               onTap: _showMemoryContent,
             ),
             ListTile(
               leading: const Icon(Icons.upload_file, color: Color(0xFF10A37F)),
-              title: Text(_isArabic ? 'تصدير الذاكرة' : 'Export Memory', style: const TextStyle(color: Colors.white)),
+              title: Text(
+                _isArabic ? 'تصدير الذاكرة' : 'Export Memory',
+                style: const TextStyle(color: Colors.white),
+              ),
               subtitle: Text(
-                _isArabic ? 'حفظ نسخة احتياطية في ملفاتي' : 'Save backup to files',
+                _isArabic ? 'قريباً' : 'Coming soon',
                 style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
               onTap: _exportMemory,
             ),
             ListTile(
               leading: const Icon(Icons.download, color: Color(0xFF10A37F)),
-              title: Text(_isArabic ? 'استيراد الذاكرة' : 'Import Memory', style: const TextStyle(color: Colors.white)),
+              title: Text(
+                _isArabic ? 'استيراد الذاكرة' : 'Import Memory',
+                style: const TextStyle(color: Colors.white),
+              ),
               subtitle: Text(
-                _isArabic ? 'استعادة من نسخة احتياطية' : 'Restore from backup',
+                _isArabic ? 'قريباً' : 'Coming soon',
                 style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
               onTap: _importMemory,
@@ -347,7 +306,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context: context,
                   builder: (context) => AlertDialog(
                     backgroundColor: const Color(0xFF16213E),
-                    title: Text(_isArabic ? 'تأكيد' : 'Confirm', style: const TextStyle(color: Colors.white)),
+                    title: Text(
+                      _isArabic ? 'تأكيد' : 'Confirm',
+                      style: const TextStyle(color: Colors.white),
+                    ),
                     content: Text(
                       _isArabic
                           ? 'سيتم حذف جميع المحادثات، لكن الذاكرة ستبقى.'
@@ -386,7 +348,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context: context,
                   builder: (context) => AlertDialog(
                     backgroundColor: const Color(0xFF16213E),
-                    title: Text(_isArabic ? 'تأكيد' : 'Confirm', style: const TextStyle(color: Colors.white)),
+                    title: Text(
+                      _isArabic ? 'تأكيد' : 'Confirm',
+                      style: const TextStyle(color: Colors.white),
+                    ),
                     content: Text(
                       _isArabic
                           ? 'سيتم حذف كل المعلومات الشخصية المحفوظة. لا يمكن التراجع.'
@@ -409,7 +374,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           if (mounted) {
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(_isArabic ? 'تم حذف الذاكرة' : 'Memory deleted')),
+                              SnackBar(
+                                content: Text(
+                                  _isArabic ? 'تم حذف الذاكرة' : 'Memory deleted',
+                                ),
+                              ),
                             );
                           }
                         },
@@ -436,16 +405,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _geminiLanguageName() {
     switch (_geminiLanguage) {
-      case 'ar': return 'العربية';
-      case 'en': return 'English';
-      case 'fr': return 'Français';
-      case 'es': return 'Español';
-      case 'tr': return 'Türkçe';
-      default: return 'العربية';
+      case 'ar':
+        return 'العربية';
+      case 'en':
+        return 'English';
+      case 'fr':
+        return 'Français';
+      case 'es':
+        return 'Español';
+      case 'tr':
+        return 'Türkçe';
+      default:
+        return 'العربية';
     }
   }
 
-  Widget _langButton({required String label, required bool selected, required VoidCallback onTap}) {
+  Widget _langButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: selected ? const Color(0xFF10A37F) : const Color(0xFF1E1E1E),
