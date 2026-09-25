@@ -19,6 +19,7 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
   Locale _locale = const Locale('ar');
   double _fontSize = 14.0;
   String _geminiLanguage = 'ar';
+  String _password = '';
   bool _loaded = false;
   bool _hasPassword = false;
   bool _unlocked = false;
@@ -51,8 +52,9 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
     });
   }
 
-  void _onUnlocked() {
+  void _onUnlocked(String password) {
     setState(() {
+      _password = password;
       _unlocked = true;
       _hasPassword = true;
     });
@@ -95,6 +97,7 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
               fontSize: _fontSize,
               geminiLanguage: _geminiLanguage,
               locale: _locale,
+              password: _password,
               onSettingsChanged: _updateSettings,
             ),
     );
