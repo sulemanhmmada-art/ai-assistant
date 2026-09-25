@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
@@ -15,6 +14,7 @@ class ChatScreen extends StatefulWidget {
   final double fontSize;
   final String geminiLanguage;
   final Locale locale;
+  final String password;
   final Function(Locale, double, String) onSettingsChanged;
 
   const ChatScreen({
@@ -22,6 +22,7 @@ class ChatScreen extends StatefulWidget {
     required this.fontSize,
     required this.geminiLanguage,
     required this.locale,
+    required this.password,
     required this.onSettingsChanged,
   });
 
@@ -29,9 +30,12 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  late AnimationController _dotsController;
+  late AnimationController _glowController;
   List<Map<String, dynamic>> _conversations = [];
   String? _currentConversationId;
   bool _isLoading = false;
@@ -62,18 +66,35 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _dotsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
     _loadConversations();
   }
 
+  @override
+  void dispose() {
+    _dotsController.dispose();
+    _glowController.dispose();
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadConversations() async {
-    final convs = await MemoryService.loadConversations();
+    final convs = await MemoryService.loadConversations(widget.password);
     setState(() {
       _conversations = convs;
     });
   }
 
   Future<void> _saveConversations() async {
-    await MemoryService.saveConversations(_conversations);
+    await MemoryService.saveConversations(_conversations, widget.password);
   }
 
   Map<String, dynamic>? get _currentConversation {
@@ -124,7 +145,6 @@ class _ChatScreenState extends State<ChatScreen> {
     await _saveConversations();
   }
 
-  /// كشف إذا كانت الرسالة تطلب توليد صورة
   bool _isImageRequest(String text) {
     final lower = text.toLowerCase();
     final keywords = [
@@ -138,7 +158,6 @@ class _ChatScreenState extends State<ChatScreen> {
     return keywords.any((k) => lower.contains(k));
   }
 
-  /// استخراج الوصف من طلب توليد الصورة
   String _extractImagePrompt(String text) {
     final removeWords = [
       'ارسم لي', 'ارسملي', 'ارسم',
@@ -159,12 +178,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty || _currentConversationId == null) return;
 
-    // حفظ المعلومات تلقائياً في الذاكرة
-    await MemoryService.extractFacts(text);
+    await MemoryService.extractFacts(text, widget.password);
 
     final messages = _currentMessages;
 
-    // كشف إذا كانت الرسالة تطلب توليد صورة
     if (_isImageRequest(text)) {
       final prompt = _extractImagePrompt(text);
       messages.add({
@@ -188,7 +205,6 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // إرسال كرسالة عادية
     messages.add({
       'role': 'user',
       'content': text,
@@ -212,7 +228,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final memory = await MemoryService.getMemoryAsText();
+      final memory = await MemoryService.getMemoryAsText(widget.password);
       final fullMessage = memory.isNotEmpty
           ? '$memory\n\nرسالة المستخدم: $text'
           : text;
@@ -301,6 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final dio = Dio();
       dio.options.connectTimeout = const Duration(seconds: 30);
       dio.options.receiveTimeout = const Duration(seconds: 120);
+      dio.options.validateStatus = (status) => status != null && status < 500;
 
       final response = await dio.post(
         IMAGE_WORKER_URL,
@@ -325,10 +342,11 @@ class _ChatScreenState extends State<ChatScreen> {
         await _saveConversations();
         setState(() {});
       } else {
+        final errorMsg = response.data['error'] ?? '$_imageErrorText: ${response.statusCode}';
         final errMessages = _currentMessages;
         errMessages.add({
           'role': 'assistant',
-          'content': '$_imageErrorText: ${response.statusCode}',
+          'content': errorMsg.toString(),
         });
         for (var c in _conversations) {
           if (c['id'] == _currentConversationId) {
@@ -356,7 +374,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _pickAndEditImage() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 60);
     if (picked == null) return;
 
     final bytes = await picked.readAsBytes();
@@ -436,6 +454,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final dio = Dio();
       dio.options.connectTimeout = const Duration(seconds: 30);
       dio.options.receiveTimeout = const Duration(seconds: 120);
+      dio.options.validateStatus = (status) => status != null && status < 500;
 
       final response = await dio.post(
         IMAGE_WORKER_URL,
@@ -455,6 +474,20 @@ class _ChatScreenState extends State<ChatScreen> {
         for (var c in _conversations) {
           if (c['id'] == _currentConversationId) {
             c['messages'] = newMessages;
+          }
+        }
+        await _saveConversations();
+        setState(() {});
+      } else {
+        final errorMsg = response.data['error'] ?? '$_imageErrorText: ${response.statusCode}';
+        final errMessages = _currentMessages;
+        errMessages.add({
+          'role': 'assistant',
+          'content': errorMsg.toString(),
+        });
+        for (var c in _conversations) {
+          if (c['id'] == _currentConversationId) {
+            c['messages'] = errMessages;
           }
         }
         await _saveConversations();
@@ -517,6 +550,7 @@ class _ChatScreenState extends State<ChatScreen> {
           fontSize: widget.fontSize,
           geminiLanguage: widget.geminiLanguage,
           locale: widget.locale,
+          password: widget.password,
         ),
       ),
     );
@@ -616,7 +650,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            Text(
+            const Text(
               'TalkGPT',
               style: TextStyle(
                 color: Colors.white,
@@ -802,8 +836,8 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         Padding(
           padding: EdgeInsets.only(
-            left: isUser ? 0 : 8,
-            right: isUser ? 8 : 0,
+            left: isUser ? 8 : 0,
+            right: isUser ? 0 : 8,
           ),
           child: PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, color: Colors.white38, size: 18),
@@ -854,38 +888,64 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildTypingIndicator() {
     return Align(
       alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFF10A37F).withValues(alpha: 0.3), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF10A37F).withValues(alpha: 0.15),
-              blurRadius: 10,
-              spreadRadius: 1,
+      child: AnimatedBuilder(
+        animation: _glowController,
+        builder: (context, child) {
+          return Container(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0xFF10A37F).withValues(
+                  alpha: 0.3 + (_glowController.value * 0.5),
+                ),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF10A37F).withValues(
+                    alpha: 0.15 + (_glowController.value * 0.35),
+                  ),
+                  blurRadius: 10 + (_glowController.value * 15),
+                  spreadRadius: 1 + (_glowController.value * 2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (i) => _buildDot(i)),
-        ),
+            child: AnimatedBuilder(
+              animation: _dotsController,
+              builder: (context, child) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (i) => _buildDot(i)),
+                );
+              },
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildDot(int index) {
-    return AnimatedContainer(
-      duration: Duration(milliseconds: 600 + (index * 200)),
-      margin: const EdgeInsets.symmetric(horizontal: 3),
-      height: 10,
-      width: 10,
-      decoration: BoxDecoration(
-        color: const Color(0xFF10A37F).withValues(alpha: 0.6 + (index * 0.2)),
-        shape: BoxShape.circle,
+    final t = _dotsController.value;
+    final offset = (t * 3) % 3;
+    final isActive = offset >= index && offset < index + 1;
+    final scale = isActive ? 1.4 : 1.0;
+
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        height: 10,
+        width: 10,
+        decoration: BoxDecoration(
+          color: isActive
+              ? const Color(0xFF10A37F)
+              : const Color(0xFF10A37F).withValues(alpha: 0.4),
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }
