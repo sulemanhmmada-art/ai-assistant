@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -175,13 +176,25 @@ class _ChatScreenState extends State<ChatScreen>
           ? '$memory\n\nرسالة المستخدم: $text'
           : text;
 
+      // استخراج آخر 10 رسائل (بدون الرسالة الحالية)
+      final allMessages = _currentMessages;
+      final historyEnd = allMessages.length > 1 ? allMessages.length - 1 : 0;
+      final historyStart = historyEnd > 10 ? historyEnd - 10 : 0;
+      final history = historyEnd > 0
+          ? allMessages.sublist(historyStart, historyEnd)
+          : <Map<String, dynamic>>[];
+
       final dio = Dio();
       dio.options.connectTimeout = const Duration(seconds: 30);
       dio.options.receiveTimeout = const Duration(seconds: 90);
 
       final response = await dio.post(
         WORKER_URL,
-        data: {'message': fullMessage, 'language': widget.geminiLanguage},
+        data: {
+          'message': fullMessage,
+          'language': widget.geminiLanguage,
+          'history': history,
+        },
         options: Options(
           headers: {'Content-Type': 'application/json'},
           responseType: ResponseType.plain,
@@ -691,7 +704,7 @@ class _ChatScreenState extends State<ChatScreen>
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 6),
             padding: const EdgeInsets.all(14),
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
             decoration: BoxDecoration(
               color: isUser ? const Color(0xFF10A37F) : const Color(0xFF1E1E1E),
               borderRadius: BorderRadius.circular(18),
@@ -709,11 +722,66 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                   ),
                 if (hasImage) const SizedBox(height: 8),
-                SelectableText(
-                  msg['content']?.toString() ?? '',
-                  style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
-                  textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                ),
+                if (isUser)
+                  SelectableText(
+                    msg['content']?.toString() ?? '',
+                    style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
+                    textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                  )
+                else
+                  MarkdownBody(
+                    data: msg['content']?.toString() ?? '',
+                    selectable: true,
+                    styleSheet: MarkdownStyleSheet(
+                      p: TextStyle(
+                        color: Colors.white,
+                        fontSize: widget.fontSize,
+                        height: 1.6,
+                      ),
+                      h1: TextStyle(
+                        color: Colors.white,
+                        fontSize: widget.fontSize + 8,
+                        fontWeight: FontWeight.bold,
+                        height: 1.8,
+                      ),
+                      h2: TextStyle(
+                        color: const Color(0xFF10A37F),
+                        fontSize: widget.fontSize + 5,
+                        fontWeight: FontWeight.bold,
+                        height: 1.8,
+                      ),
+                      h3: TextStyle(
+                        color: Colors.white,
+                        fontSize: widget.fontSize + 3,
+                        fontWeight: FontWeight.w600,
+                        height: 1.6,
+                      ),
+                      listBullet: TextStyle(
+                        color: const Color(0xFF10A37F),
+                        fontSize: widget.fontSize,
+                      ),
+                      code: TextStyle(
+                        color: const Color(0xFF10A37F),
+                        backgroundColor: Colors.black.withValues(alpha: 0.4),
+                        fontFamily: 'monospace',
+                        fontSize: widget.fontSize - 1,
+                      ),
+                      codeblockDecoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      blockquoteDecoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        border: const Border(
+                          left: BorderSide(color: Color(0xFF10A37F), width: 3),
+                        ),
+                      ),
+                      tableBorder: TableBorder.all(color: Colors.white24),
+                      tableCellsPadding: const EdgeInsets.all(8),
+                      strong: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      em: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white70),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -796,7 +864,7 @@ class _ChatScreenState extends State<ChatScreen>
     final t = _dotsController.value;
     final offset = (t * 3) % 3;
     final isActive = offset >= index && offset < index + 1;
-    final scale = isActive ? 1.4 : 1.0;
+    final scale = isActive ? 1.5 : 1.0;
 
     return Transform.scale(
       scale: scale,
@@ -805,8 +873,19 @@ class _ChatScreenState extends State<ChatScreen>
         height: 10,
         width: 10,
         decoration: BoxDecoration(
-          color: isActive ? const Color(0xFF10A37F) : const Color(0xFF10A37F).withValues(alpha: 0.4),
+          color: isActive
+              ? const Color(0xFF10A37F)
+              : const Color(0xFF10A37F).withValues(alpha: 0.4),
           shape: BoxShape.circle,
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF10A37F).withValues(alpha: 0.8),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
         ),
       ),
     );
