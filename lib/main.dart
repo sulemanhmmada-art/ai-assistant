@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'memory_service.dart';
 import 'chat_screen.dart';
 import 'lock_screen.dart';
@@ -19,6 +20,7 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
   Locale _locale = const Locale('ar');
   double _fontSize = 14.0;
   String _geminiLanguage = 'ar';
+  String _fontFamily = 'Default';
   String _password = '';
   bool _loaded = false;
   bool _hasPassword = false;
@@ -38,6 +40,7 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
       _locale = Locale(prefs.getString('app_language') ?? 'ar');
       _fontSize = prefs.getDouble('font_size') ?? 14.0;
       _geminiLanguage = prefs.getString('gemini_language') ?? 'ar';
+      _fontFamily = prefs.getString('font_family') ?? 'Default';
       _hasPassword = hasPass;
       _unlocked = false;
       _loaded = true;
@@ -50,6 +53,14 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
       _fontSize = fontSize;
       _geminiLanguage = geminiLang;
     });
+    _loadFontFamily();
+  }
+
+  Future<void> _loadFontFamily() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _fontFamily = prefs.getString('font_family') ?? 'Default';
+    });
   }
 
   void _onUnlocked(String password) {
@@ -58,6 +69,44 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
       _unlocked = true;
       _hasPassword = true;
     });
+  }
+
+  TextTheme _buildTextTheme(TextTheme base) {
+    TextStyle applyFont(TextStyle? style) {
+      if (style == null) return const TextStyle();
+      switch (_fontFamily) {
+        case 'Cairo':
+          return GoogleFonts.cairo(textStyle: style);
+        case 'Tajawal':
+          return GoogleFonts.tajawal(textStyle: style);
+        case 'Almarai':
+          return GoogleFonts.almarai(textStyle: style);
+        case 'Amiri':
+          return GoogleFonts.amiri(textStyle: style);
+        case 'Changa':
+          return GoogleFonts.changa(textStyle: style);
+        default:
+          return style;
+      }
+    }
+
+    return base.copyWith(
+      bodyLarge: applyFont(base.bodyLarge),
+      bodyMedium: applyFont(base.bodyMedium),
+      bodySmall: applyFont(base.bodySmall),
+      titleLarge: applyFont(base.titleLarge),
+      titleMedium: applyFont(base.titleMedium),
+      titleSmall: applyFont(base.titleSmall),
+      displayLarge: applyFont(base.displayLarge),
+      displayMedium: applyFont(base.displayMedium),
+      displaySmall: applyFont(base.displaySmall),
+      headlineLarge: applyFont(base.headlineLarge),
+      headlineMedium: applyFont(base.headlineMedium),
+      headlineSmall: applyFont(base.headlineSmall),
+      labelLarge: applyFont(base.labelLarge),
+      labelMedium: applyFont(base.labelMedium),
+      labelSmall: applyFont(base.labelSmall),
+    );
   }
 
   @override
@@ -73,23 +122,27 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
       );
     }
 
+    final baseTheme = ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF10A37F),
+        brightness: Brightness.dark,
+      ),
+      scaffoldBackgroundColor: const Color(0xFF0E1116),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF0E1116),
+        elevation: 0,
+        centerTitle: false,
+      ),
+    );
+
     return MaterialApp(
       title: 'TalkGPT',
       debugShowCheckedModeBanner: false,
       locale: _locale,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF10A37F),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0E1116),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0E1116),
-          elevation: 0,
-          centerTitle: false,
-        ),
+      theme: baseTheme.copyWith(
+        textTheme: _buildTextTheme(baseTheme.textTheme),
       ),
       home: !_unlocked
           ? LockScreen(onUnlocked: _onUnlocked)
