@@ -1068,4 +1068,276 @@ class _ChatScreenState extends State<ChatScreen>
                   children: [
                     const Icon(Icons.copy, color: Colors.white, size: 18),
                     const SizedBox(width: 8),
-                    Text(_copyText,
+                    Text(_copyText, style: const TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              if (isLastAssistant)
+                PopupMenuItem(
+                  value: 'retry',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.refresh, color: Color(0xFF10A37F), size: 18),
+                      const SizedBox(width: 8),
+                      Text(_retryText, style: const TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Align(
+      alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
+      child: AnimatedBuilder(
+        animation: _glowController,
+        builder: (context, child) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF10A37F).withValues(alpha: 0.1 + (_glowController.value * 0.15)),
+                      const Color(0xFF764ba2).withValues(alpha: 0.05 + (_glowController.value * 0.1)),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFF10A37F).withValues(alpha: 0.3 + (_glowController.value * 0.5)),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10A37F).withValues(alpha: 0.15 + (_glowController.value * 0.35)),
+                      blurRadius: 15 + (_glowController.value * 20),
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: AnimatedBuilder(
+                  animation: _dotsController,
+                  builder: (context, child) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(3, (i) => _buildFlowingDot(i)),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFlowingDot(int index) {
+    final t = _dotsController.value;
+    final phase = (t + (index * 0.33)) % 1.0;
+    final yOffset = -8 * (1 - (2 * (phase - 0.5)).abs()) * (phase < 0.5 ? 1 : -1);
+    final opacity = 0.4 + (0.6 * (1 - (phase - 0.5).abs() * 2));
+    final scale = 0.8 + (0.4 * (1 - (phase - 0.5).abs() * 2));
+
+    return Transform.translate(
+      offset: Offset(0, yOffset),
+      child: Transform.scale(
+        scale: scale,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          height: 11,
+          width: 11,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF10A37F).withValues(alpha: opacity),
+                const Color(0xFF764ba2).withValues(alpha: opacity),
+              ],
+            ),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF10A37F).withValues(alpha: opacity * 0.7),
+                blurRadius: 10,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassInputBar() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.02),
+        border: Border(
+          top: BorderSide(color: const Color(0xFF10A37F).withValues(alpha: 0.2)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_pendingImage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: _isUploadingImage
+                          ? Container(
+                              width: 100,
+                              height: 100,
+                              color: Colors.black.withValues(alpha: 0.5),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 30,
+                                  height: 30,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                    color: Color(0xFF10A37F),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : _imageUploadFailed
+                              ? GestureDetector(
+                                  onTap: _retryImageUpload,
+                                  child: Container(
+                                    width: 100,
+                                    height: 100,
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.refresh,
+                                        color: Color(0xFFF5576C),
+                                        size: 40,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : _pendingImageBase64 != null
+                                  ? Image.memory(
+                                      base64Decode(_pendingImageBase64!),
+                                      width: 100,
+                                      height: 100,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : Container(
+                                      width: 100,
+                                      height: 100,
+                                      color: Colors.black.withValues(alpha: 0.5),
+                                    ),
+                    ),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: GestureDetector(
+                        onTap: _removePendingImage,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close, color: Colors.white, size: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10A37F).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.add, color: Color(0xFF10A37F), size: 26),
+                  onPressed: _showAttachmentOptions,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: const Color(0xFF10A37F).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
+                        child: TextField(
+                          controller: _controller,
+                          style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
+                          maxLines: null,
+                          minLines: 1,
+                          keyboardType: TextInputType.multiline,
+                          textInputAction: TextInputAction.newline,
+                          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                          onTap: _scrollToBottom,
+                          decoration: InputDecoration(
+                            hintText: _hintText,
+                            hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF10A37F), Color(0xFF764ba2)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10A37F).withValues(alpha: 0.4),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.send, color: Colors.white, size: 24),
+                  onPressed: _sendMessage,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
