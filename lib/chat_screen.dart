@@ -6,7 +6,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:uuid/uuid.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'memory_service.dart';
 import 'settings_screen.dart';
@@ -45,6 +44,8 @@ class _ChatScreenState extends State<ChatScreen>
   XFile? _pendingImage;
   String? _pendingImageBase64;
   bool _isUploadingImage = false;
+  bool _imageUploadFailed = false;
+  String _selectedModel = 'auto';
 
   static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
   static const String IMAGE_WORKER_URL = 'https://image-proxy.sulemanhmmada.workers.dev/';
@@ -61,7 +62,6 @@ class _ChatScreenState extends State<ChatScreen>
   String get _retryText => _isArabic ? 'إعادة المحاولة' : 'Retry';
   String get _copiedText => _isArabic ? 'تم النسخ ✅' : 'Copied ✅';
   String get _noConversationsText => _isArabic ? 'لا توجد محادثات' : 'No conversations';
-  String get _cancelText => _isArabic ? 'إلغاء' : 'Cancel';
 
   @override
   void initState() {
@@ -154,6 +154,7 @@ class _ChatScreenState extends State<ChatScreen>
     final text = _controller.text.trim();
     if (text.isEmpty && _pendingImage == null) return;
     if (_currentConversationId == null) return;
+    if (_pendingImage != null && _pendingImageBase64 == null) return;
 
     // 🐍 لعبة الدودة السرية
     if (text.toLowerCase() == 'suleman') {
@@ -167,13 +168,10 @@ class _ChatScreenState extends State<ChatScreen>
 
     final messages = _currentMessages;
 
-    // إذا كانت هناك صورة معلقة
     if (_pendingImage != null && _pendingImageBase64 != null) {
       messages.add({
         'role': 'user',
-        'content': text.isEmpty
-            ? (_isArabic ? '🖼️ حلل هذه الصورة' : '🖼️ Analyze this image')
-            : text,
+        'content': text,
         'image_input': _pendingImageBase64,
         'timestamp': DateTime.now().toIso8601String(),
       });
@@ -190,6 +188,7 @@ class _ChatScreenState extends State<ChatScreen>
       _isLoading = true;
       _pendingImage = null;
       _pendingImageBase64 = null;
+      _imageUploadFailed = false;
     });
     _controller.clear();
 
@@ -197,7 +196,9 @@ class _ChatScreenState extends State<ChatScreen>
       if (c['id'] == _currentConversationId) {
         c['messages'] = messages;
         if (messages.length == 1) {
-          c['title'] = text.length > 30 ? text.substring(0, 30) : text;
+          c['title'] = text.isNotEmpty
+              ? (text.length > 30 ? text.substring(0, 30) : text)
+              : (_isArabic ? 'صورة' : 'Image');
         }
       }
     }
@@ -205,13 +206,14 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollToBottom();
 
     try {
-      // إذا كانت صورة، استخدم image-proxy
       if (messages.last['image_input'] != null) {
-        await _analyzeImageRequest(messages.last['image_input'] as String, text);
+        await _analyzeImageRequest(
+          messages.last['image_input'] as String,
+          text,
+        );
         return;
       }
 
-      // نص عادي
       final memory = await MemoryService.getMemoryAsText(widget.password);
       final fullMessage = memory.isNotEmpty ? '$memory\n\nرسالة المستخدم: $text' : text;
 
@@ -232,6 +234,7 @@ class _ChatScreenState extends State<ChatScreen>
           'message': fullMessage,
           'language': widget.geminiLanguage,
           'history': history,
+          'model': _selectedModel,
         },
         options: Options(
           headers: {'Content-Type': 'application/json'},
@@ -328,9 +331,7 @@ class _ChatScreenState extends State<ChatScreen>
     final messages = _currentMessages;
     if (messages.length < 2) return;
 
-    // إزالة آخر رسالة (رد المساعد)
     messages.removeLast();
-    // الاحتفاظ بالرسالة الأخيرة من المستخدم
     final lastUserMsg = messages.isNotEmpty && messages.last['role'] == 'user'
         ? messages.last
         : null;
@@ -376,6 +377,7 @@ class _ChatScreenState extends State<ChatScreen>
           'message': fullMessage,
           'language': widget.geminiLanguage,
           'history': history,
+          'model': _selectedModel,
         },
         options: Options(
           headers: {'Content-Type': 'application/json'},
@@ -408,7 +410,7 @@ class _ChatScreenState extends State<ChatScreen>
             } catch (_) {}
           }
         }
-        if (fullReply.isEmpty) fullReply = _isArabic ? 'عذراً، لم أستطع توليد رد.' : 'Sorry.';
+        if (fullReply.isEmpty) fullReply = _isArabic ? 'عذراً.' : 'Sorry.';
         _addAssistantReply(fullReply);
       }
     } catch (e) {
@@ -423,7 +425,9 @@ class _ChatScreenState extends State<ChatScreen>
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 70,
+      imageQuality: 50,
+      maxWidth: 1080,
+      maxHeight: 1080,
     );
     if (picked == null) return;
     await _stagePendingImage(picked);
@@ -433,7 +437,9 @@ class _ChatScreenState extends State<ChatScreen>
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 70,
+      imageQuality: 50,
+      maxWidth: 1080,
+      maxHeight: 1080,
     );
     if (picked == null) return;
     await _stagePendingImage(picked);
@@ -441,24 +447,44 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _stagePendingImage(XFile picked) async {
     setState(() {
-      _isUploadingImage = true;
-    });
-
-    final bytes = await picked.readAsBytes();
-    final base64Image = base64Encode(bytes);
-
-    if (!mounted) return;
-    setState(() {
       _pendingImage = picked;
-      _pendingImageBase64 = base64Image;
-      _isUploadingImage = false;
+      _isUploadingImage = true;
+      _imageUploadFailed = false;
+      _pendingImageBase64 = null;
     });
+
+    try {
+      final bytes = await picked.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      if (!mounted) return;
+      setState(() {
+        _pendingImageBase64 = base64Image;
+        _isUploadingImage = false;
+        _imageUploadFailed = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isUploadingImage = false;
+        _imageUploadFailed = true;
+      });
+    }
+  }
+
+  Future<void> _retryImageUpload() async {
+    if (_pendingImage == null) return;
+    await _stagePendingImage(_pendingImage!);
   }
 
   void _removePendingImage() {
     setState(() {
       _pendingImage = null;
       _pendingImageBase64 = null;
+      _isUploadingImage = false;
+      _imageUploadFailed = false;
     });
   }
 
@@ -483,10 +509,16 @@ class _ChatScreenState extends State<ChatScreen>
           geminiLanguage: widget.geminiLanguage,
           locale: widget.locale,
           password: widget.password,
+          selectedModel: _selectedModel,
         ),
       ),
     );
     if (result != null && result is Map) {
+      if (result['model'] != null) {
+        setState(() {
+          _selectedModel = result['model'] as String;
+        });
+      }
       widget.onSettingsChanged(
         result['locale'] as Locale,
         result['fontSize'] as double,
@@ -637,14 +669,6 @@ class _ChatScreenState extends State<ChatScreen>
             );
           },
         ),
-        floatingActionButton: _currentConversationId == null
-            ? FloatingActionButton.extended(
-                onPressed: _createNewConversation,
-                backgroundColor: const Color(0xFF10A37F),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: Text(_newChatText, style: const TextStyle(color: Colors.white)),
-              )
-            : null,
         drawer: _buildGlassDrawer(),
       ),
     );
@@ -684,9 +708,9 @@ class _ChatScreenState extends State<ChatScreen>
           ),
           if (_currentConversationId != null)
             IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white70),
-              tooltip: _retryText,
-              onPressed: _isLoading ? null : _retryLastMessage,
+              icon: const Icon(Icons.add, color: Color(0xFF10A37F)),
+              tooltip: _newChatText,
+              onPressed: _createNewConversation,
             ),
         ],
       ),
@@ -890,7 +914,7 @@ class _ChatScreenState extends State<ChatScreen>
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
                 margin: const EdgeInsets.symmetric(vertical: 6),
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(12),
                 constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
                 decoration: BoxDecoration(
                   gradient: isUser
@@ -932,68 +956,81 @@ class _ChatScreenState extends State<ChatScreen>
                         child: Image.memory(
                           base64Decode(msg['image_input'] as String),
                           fit: BoxFit.cover,
-                          height: 200,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 200,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Center(
+                                child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                    if (hasImage) const SizedBox(height: 8),
-                    if (isUser)
-                      SelectableText(
-                        msg['content']?.toString() ?? '',
-                        style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
-                        textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                      )
-                    else
-                      MarkdownBody(
-                        data: msg['content']?.toString() ?? '',
-                        selectable: true,
-                        styleSheet: MarkdownStyleSheet(
-                          p: TextStyle(
-                            color: Colors.white,
-                            fontSize: widget.fontSize,
-                            height: 1.6,
-                          ),
-                          h1: TextStyle(
-                            color: Colors.white,
-                            fontSize: widget.fontSize + 8,
-                            fontWeight: FontWeight.bold,
-                            height: 1.8,
-                          ),
-                          h2: TextStyle(
-                            color: const Color(0xFF10A37F),
-                            fontSize: widget.fontSize + 5,
-                            fontWeight: FontWeight.bold,
-                            height: 1.8,
-                          ),
-                          h3: TextStyle(
-                            color: Colors.white,
-                            fontSize: widget.fontSize + 3,
-                            fontWeight: FontWeight.w600,
-                            height: 1.6,
-                          ),
-                          listBullet: TextStyle(
-                            color: const Color(0xFF10A37F),
-                            fontSize: widget.fontSize,
-                          ),
-                          code: TextStyle(
-                            color: const Color(0xFF10A37F),
-                            backgroundColor: Colors.black.withValues(alpha: 0.4),
-                            fontFamily: 'monospace',
-                            fontSize: widget.fontSize - 1,
-                          ),
-                          codeblockDecoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          blockquoteDecoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            border: const Border(left: BorderSide(color: Color(0xFF10A37F), width: 3)),
-                          ),
-                          tableBorder: TableBorder.all(color: Colors.white24),
-                          tableCellsPadding: const EdgeInsets.all(8),
-                          strong: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                          em: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white70),
-                        ),
-                      ),
+                    if (hasImage && (msg['content']?.toString().isNotEmpty ?? false))
+                      const SizedBox(height: 8),
+                    if (!hasImage || (msg['content']?.toString().isNotEmpty ?? false))
+                      isUser
+                          ? SelectableText(
+                              msg['content']?.toString() ?? '',
+                              style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
+                              textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                            )
+                          : MarkdownBody(
+                              data: msg['content']?.toString() ?? '',
+                              selectable: true,
+                              styleSheet: MarkdownStyleSheet(
+                                p: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: widget.fontSize,
+                                  height: 1.6,
+                                ),
+                                h1: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: widget.fontSize + 8,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.8,
+                                ),
+                                h2: TextStyle(
+                                  color: const Color(0xFF10A37F),
+                                  fontSize: widget.fontSize + 5,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.8,
+                                ),
+                                h3: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: widget.fontSize + 3,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.6,
+                                ),
+                                listBullet: TextStyle(
+                                  color: const Color(0xFF10A37F),
+                                  fontSize: widget.fontSize,
+                                ),
+                                code: TextStyle(
+                                  color: const Color(0xFF10A37F),
+                                  backgroundColor: Colors.black.withValues(alpha: 0.4),
+                                  fontFamily: 'monospace',
+                                  fontSize: widget.fontSize - 1,
+                                ),
+                                codeblockDecoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                blockquoteDecoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                  border: const Border(left: BorderSide(color: Color(0xFF10A37F), width: 3)),
+                                ),
+                                tableBorder: TableBorder.all(color: Colors.white24),
+                                tableCellsPadding: const EdgeInsets.all(8),
+                                strong: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                                em: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white70),
+                              ),
+                            ),
                   ],
                 ),
               ),
@@ -1031,262 +1068,4 @@ class _ChatScreenState extends State<ChatScreen>
                   children: [
                     const Icon(Icons.copy, color: Colors.white, size: 18),
                     const SizedBox(width: 8),
-                    Text(_copyText, style: const TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
-              if (isLastAssistant)
-                PopupMenuItem(
-                  value: 'retry',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.refresh, color: Color(0xFF10A37F), size: 18),
-                      const SizedBox(width: 8),
-                      Text(_retryText, style: const TextStyle(color: Colors.white)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTypingIndicator() {
-    return Align(
-      alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
-      child: AnimatedBuilder(
-        animation: _glowController,
-        builder: (context, child) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      const Color(0xFF10A37F).withValues(alpha: 0.1 + (_glowController.value * 0.15)),
-                      const Color(0xFF764ba2).withValues(alpha: 0.05 + (_glowController.value * 0.1)),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: const Color(0xFF10A37F).withValues(alpha: 0.3 + (_glowController.value * 0.5)),
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF10A37F).withValues(alpha: 0.15 + (_glowController.value * 0.35)),
-                      blurRadius: 15 + (_glowController.value * 20),
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: AnimatedBuilder(
-                  animation: _dotsController,
-                  builder: (context, child) {
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(3, (i) => _buildFlowingDot(i)),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildFlowingDot(int index) {
-    final t = _dotsController.value;
-    // حركة حرة كل نقطة في موجة مختلفة
-    final phase = (t + (index * 0.33)) % 1.0;
-    final yOffset = -8 * (1 - (2 * (phase - 0.5)).abs()) * (phase < 0.5 ? 1 : -1);
-    final opacity = 0.4 + (0.6 * (1 - (phase - 0.5).abs() * 2));
-    final scale = 0.8 + (0.4 * (1 - (phase - 0.5).abs() * 2));
-
-    return Transform.translate(
-      offset: Offset(0, yOffset),
-      child: Transform.scale(
-        scale: scale,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          height: 11,
-          width: 11,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                const Color(0xFF10A37F).withValues(alpha: opacity),
-                const Color(0xFF764ba2).withValues(alpha: opacity),
-              ],
-            ),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF10A37F).withValues(alpha: opacity * 0.7),
-                blurRadius: 10,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassInputBar() {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.02),
-        border: Border(
-          top: BorderSide(color: const Color(0xFF10A37F).withValues(alpha: 0.2)),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // معاينة الصورة المعلقة
-          if (_pendingImage != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.memory(
-                        base64Decode(_pendingImageBase64!),
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    if (_isUploadingImage)
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.7),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF10A37F),
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      top: -8,
-                      right: -8,
-                      child: GestureDetector(
-                        onTap: _removePendingImage,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.close, color: Colors.white, size: 14),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10A37F).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.add, color: Color(0xFF10A37F), size: 26),
-                  onPressed: _showAttachmentOptions,
-                  tooltip: _isArabic ? 'إرفاق' : 'Attach',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: const Color(0xFF10A37F).withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
-                        child: TextField(
-                          controller: _controller,
-                          style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
-                          maxLines: null,
-                          minLines: 1,
-                          keyboardType: TextInputType.multiline,
-                          textInputAction: TextInputAction.newline,
-                          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                          onTap: _scrollToBottom,
-                          decoration: InputDecoration(
-                            hintText: _pendingImage != null
-                                ? (_isArabic ? 'أضف سؤالاً (اختياري)...' : 'Add a question (optional)...')
-                                : _hintText,
-                            hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF10A37F), Color(0xFF764ba2)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF10A37F).withValues(alpha: 0.4),
-                      blurRadius: 12,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.send, color: Colors.white, size: 24),
-                  onPressed: _sendMessage,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
+                    Text(_copyText,
