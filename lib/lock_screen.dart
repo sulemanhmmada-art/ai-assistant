@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'dart:math' as math;
+import 'package:local_auth/local_auth.dart';
 import 'memory_service.dart';
 
 class LockScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class _LockScreenState extends State<LockScreen>
     with TickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
+  final LocalAuthentication _auth = LocalAuthentication();
 
   late AnimationController _floatingController;
   late AnimationController _pulseController;
@@ -31,6 +33,8 @@ class _LockScreenState extends State<LockScreen>
   bool _isLoading = true;
   bool _isPasswordVisible = false;
   bool _isSubmitting = false;
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
 
   @override
   void initState() {
@@ -77,15 +81,60 @@ class _LockScreenState extends State<LockScreen>
       if (mounted) _slideController.forward();
     });
 
-    _checkPasswordStatus();
+    _checkStatus();
   }
 
-  Future<void> _checkPasswordStatus() async {
+  Future<void> _checkStatus() async {
     final hasPass = await MemoryService.hasPassword();
+    final bioEnabled = await MemoryService.isBiometricEnabled();
+
+    bool bioAvailable = false;
+    try {
+      final canCheck = await _auth.canCheckBiometrics;
+      final isSupported = await _auth.isDeviceSupported();
+      final availableBiometrics = await _auth.getAvailableBiometrics();
+      bioAvailable = canCheck && isSupported && availableBiometrics.isNotEmpty;
+    } catch (_) {}
+
     setState(() {
       _isFirstTime = !hasPass;
+      _biometricEnabled = bioEnabled;
+      _biometricAvailable = bioAvailable;
       _isLoading = false;
     });
+
+    if (!_isFirstTime && _biometricEnabled && _biometricAvailable) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _authenticateBiometric();
+      });
+    }
+  }
+
+  Future<void> _authenticateBiometric() async {
+    if (!_biometricAvailable || !_biometricEnabled) return;
+
+    try {
+      final didAuthenticate = await _auth.authenticate(
+        localizedReason: 'أدخل بصمتك للدخول إلى TalkGPT',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+
+      if (didAuthenticate) {
+        final password = await MemoryService.getStoredPassword();
+        if (password != null) {
+          widget.onUnlocked(password);
+        } else {
+          setState(() {
+            _showError = true;
+          });
+        }
+      }
+    } catch (e) {
+      print('Biometric error: $e');
+    }
   }
 
   @override
@@ -117,6 +166,7 @@ class _LockScreenState extends State<LockScreen>
     final success = await MemoryService.setPassword(pass);
 
     if (success) {
+      await MemoryService.saveStoredPassword(pass);
       widget.onUnlocked(pass);
     } else {
       setState(() {
@@ -139,6 +189,7 @@ class _LockScreenState extends State<LockScreen>
     final valid = await MemoryService.verifyPassword(pass);
 
     if (valid) {
+      await MemoryService.saveStoredPassword(pass);
       widget.onUnlocked(pass);
     } else {
       setState(() {
@@ -339,6 +390,57 @@ class _LockScreenState extends State<LockScreen>
           ),
           child: Column(
             children: [
+              if (!_isFirstTime && _biometricEnabled && _biometricAvailable) ...[
+                GestureDetector(
+                  onTap: _authenticateBiometric,
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF10A37F), Color(0xFF764ba2)],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10A37F).withValues(alpha: 0.5),
+                          blurRadius: 20,
+                          spreadRadius: 3,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.fingerprint,
+                      size: 40,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'اضغط للدخول بالبصمة',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.2))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'أو',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.2))),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+
               _buildGlassTextField(
                 controller: _controller,
                 hint: 'كلمة المرور',
@@ -369,15 +471,6 @@ class _LockScreenState extends State<LockScreen>
               ],
               const SizedBox(height: 24),
               _buildGlassButton(),
-              const SizedBox(height: 20),
-              Text(
-                '🔒 بياناتك مشفّرة بـ AES-256',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 12,
-                ),
-              ),
             ],
           ),
         ),
