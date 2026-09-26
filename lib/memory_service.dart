@@ -22,7 +22,10 @@ class MemoryService {
         return jsonDecode(content) as Map<String, dynamic>;
       }
     } catch (_) {}
-    return {'biometric_enabled': false};
+    return {
+      'biometric_enabled': false,
+      'background_type': 'particles',
+    };
   }
 
   static Future<void> savePrefs(Map<String, dynamic> prefs) async {
@@ -41,6 +44,17 @@ class MemoryService {
   static Future<void> setBiometricEnabled(bool enabled) async {
     final prefs = await loadPrefs();
     prefs['biometric_enabled'] = enabled;
+    await savePrefs(prefs);
+  }
+
+  static Future<String> getBackgroundType() async {
+    final prefs = await loadPrefs();
+    return prefs['background_type'] ?? 'particles';
+  }
+
+  static Future<void> setBackgroundType(String type) async {
+    final prefs = await loadPrefs();
+    prefs['background_type'] = type;
     await savePrefs(prefs);
   }
 
