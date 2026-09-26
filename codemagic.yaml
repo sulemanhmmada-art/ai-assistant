@@ -37,7 +37,9 @@ workflows:
               '<uses-permission android:name="android.permission.INTERNET"/>',
               '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>',
               '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
-              '<uses-permission android:name="android.permission.CAMERA"/>'
+              '<uses-permission android:name="android.permission.CAMERA"/>',
+              '<uses-permission android:name="android.permission.USE_BIOMETRIC"/>',
+              '<uses-permission android:name="android.permission.USE_FINGERPRINT"/>'
           ]
           lines = text.splitlines()
           new_perms = [p for p in permissions if p not in text]
@@ -50,23 +52,24 @@ workflows:
               manifest.write_text('\n'.join(lines) + '\n')
           PY
 
-      - name: Install flutter_launcher_icons
-        script: |
-          flutter pub add --dev flutter_launcher_icons
-
-      - name: Create app icon
+      - name: Convert MainActivity to FlutterFragmentActivity
         script: |
           python3 - <<'PY'
           from pathlib import Path
-          import base64
-          
-          # إنشاء مجلد الأصول
-          assets_dir = Path("assets")
-          assets_dir.mkdir(exist_ok=True)
-          
-          # الأيقونة (Base64 لصورة صغيرة - سنستخدم أيقونة مؤقتة)
-          # ملاحظة: ستحتاج إلى رفع الأيقونة إلى assets/icon.png يدوياً
-          print("Assets directory created. Please upload icon.png manually.")
+          for path in Path("android/app/src/main/kotlin").rglob("MainActivity.kt"):
+              package_line = "package com.example.talkgpt"
+              for line in path.read_text().splitlines():
+                  if line.startswith("package "):
+                      package_line = line.strip()
+                      break
+              text = f'''{package_line}
+
+import io.flutter.embedding.android.FlutterFragmentActivity
+
+class MainActivity : FlutterFragmentActivity()
+'''
+              path.write_text(text)
+              print(f"Updated: {path}")
           PY
 
       - name: Get dependencies
