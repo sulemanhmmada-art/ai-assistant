@@ -39,7 +39,7 @@ class _ChatScreenState extends State<ChatScreen>
   String? _currentConversationId;
   bool _isLoading = false;
 
-  static const String WORKER_URL = 'https://gemini-proxy.suleimanhmmada.workers.dev/';
+  static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
   static const String IMAGE_WORKER_URL = 'https://image-proxy.sulemanhmmada.workers.dev/';
 
   bool get _isArabic => widget.locale.languageCode == 'ar';
@@ -275,7 +275,6 @@ class _ChatScreenState extends State<ChatScreen>
 
     if (!mounted) return;
 
-    // نافذة سؤال اختياري
     final controller = TextEditingController();
     final userPrompt = await showDialog<String>(
       context: context,
