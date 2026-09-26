@@ -52,11 +52,49 @@ workflows:
               manifest.write_text('\n'.join(lines) + '\n')
           PY
 
+      - name: Fix MainActivity for biometrics
+        script: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # نبحث عن مجلد MainActivity
+          kotlin_dir = Path("android/app/src/main/kotlin")
+          if not kotlin_dir.exists():
+              print("Kotlin dir not found")
+          else:
+              found = False
+              for path in kotlin_dir.rglob("MainActivity.kt"):
+                  # نستخرج اسم الحزمة
+                  package_line = "package com.example.talkgpt"
+                  for line in path.read_text().splitlines():
+                      if line.startswith("package "):
+                          package_line = line.strip()
+                          break
+
+                  # نكتب الملف الجديد
+                  new_content = package_line + "\n\n"
+                  new_content += "import io.flutter.embedding.android.FlutterFragmentActivity\n\n"
+                  new_content += "class MainActivity : FlutterFragmentActivity()\n"
+
+                  path.write_text(new_content)
+                  print("Updated: " + str(path))
+                  found = True
+
+              if not found:
+                  print("MainActivity.kt not found, creating new one...")
+                  # ننشئ MainActivity جديد
+                  new_dir = kotlin_dir / "com" / "example" / "talkgpt"
+                  new_dir.mkdir(parents=True, exist_ok=True)
+                  new_file = new_dir / "MainActivity.kt"
+                  new_content = "package com.example.talkgpt\n\n"
+                  new_content += "import io.flutter.embedding.android.FlutterFragmentActivity\n\n"
+                  new_content += "class MainActivity : FlutterFragmentActivity()\n"
+                  new_file.write_text(new_content)
+                  print("Created: " + str(new_file))
+          PY
+
       - name: Get dependencies
         script: flutter pub get
-
-      - name: Generate launcher icons
-        script: flutter pub run flutter_launcher_icons
 
       - name: Build APK
         script: flutter build apk --release
