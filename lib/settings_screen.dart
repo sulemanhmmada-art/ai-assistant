@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'memory_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late double _fontSize;
   late String _geminiLanguage;
   late Locale _locale;
+  String _fontFamily = 'Default';
 
   bool get _isArabic => _locale.languageCode == 'ar';
 
@@ -33,6 +35,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _fontSize = widget.fontSize;
     _geminiLanguage = widget.geminiLanguage;
     _locale = widget.locale;
+    _loadFontFamily();
+  }
+
+  Future<void> _loadFontFamily() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _fontFamily = prefs.getString('font_family') ?? 'Default';
+    });
   }
 
   Future<void> _saveFontSize(double size) async {
@@ -50,6 +60,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setString('app_language', lang);
   }
 
+  Future<void> _saveFontFamily(String family) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('font_family', family);
+    setState(() {
+      _fontFamily = family;
+    });
+  }
+
   void _returnResult() {
     Navigator.pop(context, {
       'locale': _locale,
@@ -65,7 +83,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isArabic ? '✅ تم حذف جميع المحادثات' : '✅ All conversations deleted'),
-            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -80,17 +97,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _deleteMemory() async {
     try {
-      final emptyMemory = <String, dynamic>{
+      await MemoryService.saveMemory({
         'facts': <String>[],
         'userName': '',
         'preferences': <String>[],
-      };
-      await MemoryService.saveMemory(emptyMemory, widget.password);
+      }, widget.password);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isArabic ? '✅ تم حذف الذاكرة المؤبدة' : '✅ Permanent memory deleted'),
-            duration: const Duration(seconds: 2),
+            content: Text(_isArabic ? '✅ تم حذف الذاكرة' : '✅ Memory deleted'),
           ),
         );
       }
@@ -195,17 +210,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isArabic ? '✅ تم تغيير كلمة المرور' : '✅ Password changed'),
-        ),
+        SnackBar(content: Text(_isArabic ? '✅ تم تغيير كلمة المرور' : '✅ Password changed')),
       );
     } else if (result == false && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isArabic ? '❌ كلمة المرور القديمة خاطئة' : '❌ Old password is wrong'),
-        ),
+        SnackBar(content: Text(_isArabic ? '❌ كلمة المرور القديمة خاطئة' : '❌ Old password is wrong')),
       );
     }
+  }
+
+  void _showFontPicker() {
+    final fonts = ['Default', 'Cairo', 'Tajawal', 'Almarai', 'Amiri', 'Changa'];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _isArabic ? 'اختر الخط' : 'Choose Font',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...fonts.map((font) => _buildFontOption(font)),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFontOption(String font) {
+    final isSelected = _fontFamily == font;
+
+    TextStyle getFontStyle(double size, FontWeight weight) {
+      switch (font) {
+        case 'Cairo':
+          return GoogleFonts.cairo(fontSize: size, fontWeight: weight, color: Colors.white);
+        case 'Tajawal':
+          return GoogleFonts.tajawal(fontSize: size, fontWeight: weight, color: Colors.white);
+        case 'Almarai':
+          return GoogleFonts.almarai(fontSize: size, fontWeight: weight, color: Colors.white);
+        case 'Amiri':
+          return GoogleFonts.amiri(fontSize: size, fontWeight: weight, color: Colors.white);
+        case 'Changa':
+          return GoogleFonts.changa(fontSize: size, fontWeight: weight, color: Colors.white);
+        default:
+          return TextStyle(fontSize: size, fontWeight: weight, color: Colors.white);
+      }
+    }
+
+    return ListTile(
+      leading: isSelected
+          ? const Icon(Icons.check_circle, color: Color(0xFF10A37F))
+          : const Icon(Icons.circle_outlined, color: Colors.white30),
+      title: Text(
+        font == 'Default' ? (_isArabic ? 'افتراضي' : 'Default') : font,
+        style: getFontStyle(18, FontWeight.w600),
+      ),
+      subtitle: Text(
+        font == 'Default'
+            ? (_isArabic ? 'خط النظام' : 'System font')
+            : (_isArabic ? 'معاينة الخط' : 'Font preview'),
+        style: getFontStyle(13, FontWeight.w400).copyWith(color: Colors.white54),
+      ),
+      onTap: () {
+        _saveFontFamily(font);
+        Navigator.pop(context);
+      },
+    );
   }
 
   @override
@@ -262,6 +354,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Text('A', style: TextStyle(color: Colors.white, fontSize: 22)),
                 ],
               ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.font_download, color: Color(0xFF10A37F)),
+              title: Text(
+                _isArabic ? 'نوع الخط' : 'Font Family',
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _fontFamily == 'Default'
+                    ? (_isArabic ? 'افتراضي' : 'Default')
+                    : _fontFamily,
+                style: const TextStyle(color: Colors.white54),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+              onTap: _showFontPicker,
             ),
             const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'اللغة' : 'Language'),
@@ -429,7 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const ListTile(
               leading: Icon(Icons.info_outline, color: Color(0xFF10A37F)),
               title: Text('TalkGPT', style: TextStyle(color: Colors.white)),
-              subtitle: Text('v7.0.0', style: TextStyle(color: Colors.white54)),
+              subtitle: Text('v10.0.0', style: TextStyle(color: Colors.white54)),
             ),
             const SizedBox(height: 20),
           ],
@@ -449,11 +556,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Widget _langButton({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
+  Widget _langButton({required String label, required bool selected, required VoidCallback onTap}) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: selected ? const Color(0xFF10A37F) : const Color(0xFF1E1E1E),
