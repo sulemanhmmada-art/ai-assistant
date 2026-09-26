@@ -52,28 +52,11 @@ workflows:
               manifest.write_text('\n'.join(lines) + '\n')
           PY
 
-      - name: Convert MainActivity to FlutterFragmentActivity
-        script: |
-          python3 - <<'PY'
-          from pathlib import Path
-          for path in Path("android/app/src/main/kotlin").rglob("MainActivity.kt"):
-              package_line = "package com.example.talkgpt"
-              for line in path.read_text().splitlines():
-                  if line.startswith("package "):
-                      package_line = line.strip()
-                      break
-              text = f'''{package_line}
-
-import io.flutter.embedding.android.FlutterFragmentActivity
-
-class MainActivity : FlutterFragmentActivity()
-'''
-              path.write_text(text)
-              print(f"Updated: {path}")
-          PY
-
       - name: Get dependencies
         script: flutter pub get
+
+      - name: Generate launcher icons
+        script: flutter pub run flutter_launcher_icons
 
       - name: Build APK
         script: flutter build apk --release
