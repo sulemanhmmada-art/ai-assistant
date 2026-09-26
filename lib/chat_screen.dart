@@ -4,11 +4,13 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'memory_service.dart';
 import 'settings_screen.dart';
+import 'snake_game.dart';
 
 class ChatScreen extends StatefulWidget {
   final double fontSize;
@@ -36,9 +38,13 @@ class _ChatScreenState extends State<ChatScreen>
   final ScrollController _scrollController = ScrollController();
   late AnimationController _dotsController;
   late AnimationController _glowController;
+  late AnimationController _gradientController;
   List<Map<String, dynamic>> _conversations = [];
   String? _currentConversationId;
   bool _isLoading = false;
+  XFile? _pendingImage;
+  String? _pendingImageBase64;
+  bool _isUploadingImage = false;
 
   static const String WORKER_URL = 'https://gemini-proxy.sulemanhmmada.workers.dev/';
   static const String IMAGE_WORKER_URL = 'https://image-proxy.sulemanhmmada.workers.dev/';
@@ -51,25 +57,27 @@ class _ChatScreenState extends State<ChatScreen>
       : 'Welcome to TalkGPT!\n\nTap + to start a new chat.';
   String get _hintText => _isArabic ? 'اكتب رسالتك...' : 'Type your message...';
   String get _settingsText => _isArabic ? 'الإعدادات' : 'Settings';
-  String get _cancelText => _isArabic ? 'إلغاء' : 'Cancel';
   String get _copyText => _isArabic ? 'نسخ' : 'Copy';
+  String get _retryText => _isArabic ? 'إعادة المحاولة' : 'Retry';
   String get _copiedText => _isArabic ? 'تم النسخ ✅' : 'Copied ✅';
   String get _noConversationsText => _isArabic ? 'لا توجد محادثات' : 'No conversations';
-  String get _imagePromptHint => _isArabic
-      ? 'اكتب سؤالك عن الصورة (اختياري)...'
-      : 'Ask about the image (optional)...';
+  String get _cancelText => _isArabic ? 'إلغاء' : 'Cancel';
 
   @override
   void initState() {
     super.initState();
     _dotsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+    _gradientController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat();
     _loadConversations();
   }
 
@@ -77,6 +85,7 @@ class _ChatScreenState extends State<ChatScreen>
   void dispose() {
     _dotsController.dispose();
     _glowController.dispose();
+    _gradientController.dispose();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -143,19 +152,44 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _currentConversationId == null) return;
+    if (text.isEmpty && _pendingImage == null) return;
+    if (_currentConversationId == null) return;
 
-    await MemoryService.extractFacts(text, widget.password);
+    // 🐍 لعبة الدودة السرية
+    if (text.toLowerCase() == 'suleman') {
+      _controller.clear();
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const SnakeGame()),
+      );
+      return;
+    }
 
     final messages = _currentMessages;
-    messages.add({
-      'role': 'user',
-      'content': text,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+
+    // إذا كانت هناك صورة معلقة
+    if (_pendingImage != null && _pendingImageBase64 != null) {
+      messages.add({
+        'role': 'user',
+        'content': text.isEmpty
+            ? (_isArabic ? '🖼️ حلل هذه الصورة' : '🖼️ Analyze this image')
+            : text,
+        'image_input': _pendingImageBase64,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    } else {
+      await MemoryService.extractFacts(text, widget.password);
+      messages.add({
+        'role': 'user',
+        'content': text,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    }
 
     setState(() {
       _isLoading = true;
+      _pendingImage = null;
+      _pendingImageBase64 = null;
     });
     _controller.clear();
 
@@ -171,12 +205,16 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollToBottom();
 
     try {
-      final memory = await MemoryService.getMemoryAsText(widget.password);
-      final fullMessage = memory.isNotEmpty
-          ? '$memory\n\nرسالة المستخدم: $text'
-          : text;
+      // إذا كانت صورة، استخدم image-proxy
+      if (messages.last['image_input'] != null) {
+        await _analyzeImageRequest(messages.last['image_input'] as String, text);
+        return;
+      }
 
-      // استخراج آخر 10 رسائل (بدون الرسالة الحالية)
+      // نص عادي
+      final memory = await MemoryService.getMemoryAsText(widget.password);
+      final fullMessage = memory.isNotEmpty ? '$memory\n\nرسالة المستخدم: $text' : text;
+
       final allMessages = _currentMessages;
       final historyEnd = allMessages.length > 1 ? allMessages.length - 1 : 0;
       final historyStart = historyEnd > 10 ? historyEnd - 10 : 0;
@@ -231,136 +269,33 @@ class _ChatScreenState extends State<ChatScreen>
           fullReply = _isArabic ? 'عذراً، لم أستطع توليد رد.' : 'Sorry, no reply.';
         }
 
-        final newMessages = _currentMessages;
-        newMessages.add({
-          'role': 'assistant',
-          'content': fullReply,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        for (var c in _conversations) {
-          if (c['id'] == _currentConversationId) {
-            c['messages'] = newMessages;
-          }
-        }
-        await _saveConversations();
-        setState(() {});
+        _addAssistantReply(fullReply);
       }
     } catch (e) {
-      final errMessages = _currentMessages;
-      errMessages.add({'role': 'assistant', 'content': 'خطأ: $e'});
-      for (var c in _conversations) {
-        if (c['id'] == _currentConversationId) {
-          c['messages'] = errMessages;
-        }
-      }
-      await _saveConversations();
-      setState(() {});
+      _addAssistantReply('خطأ: $e');
     } finally {
       setState(() => _isLoading = false);
       _scrollToBottom();
     }
   }
 
-  // ============ تحليل الصور ============
-  Future<void> _pickImageFromCamera() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 70,
-    );
-    if (picked == null) return;
-    await _processImage(picked);
-  }
-
-  Future<void> _pickImageFromGallery() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
-    if (picked == null) return;
-    await _processImage(picked);
-  }
-
-  Future<void> _processImage(XFile picked) async {
-    final bytes = await picked.readAsBytes();
-    final base64Image = base64Encode(bytes);
-
-    if (!mounted) return;
-
-    final controller = TextEditingController();
-    final userPrompt = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          _isArabic ? 'تحليل الصورة' : 'Analyze Image',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: _imagePromptHint,
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: const Color(0xFF1A1A2E),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, ''),
-            child: Text(_cancelText),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10A37F)),
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: Text(_isArabic ? 'تحليل' : 'Analyze'),
-          ),
-        ],
-      ),
-    );
-
-    if (userPrompt == null) return;
-    await _analyzeImage(base64Image, userPrompt);
-  }
-
-  Future<void> _analyzeImage(String base64Image, String prompt) async {
-    if (_currentConversationId == null) {
-      await _createNewConversation();
-    }
-
-    final messages = _currentMessages;
-    messages.add({
-      'role': 'user',
-      'content': prompt.isEmpty
-          ? (_isArabic ? '🖼️ حلل هذه الصورة' : '🖼️ Analyze this image')
-          : '🖼️ $prompt',
-      'image_input': base64Image,
+  void _addAssistantReply(String content) {
+    final newMessages = _currentMessages;
+    newMessages.add({
+      'role': 'assistant',
+      'content': content,
       'timestamp': DateTime.now().toIso8601String(),
     });
-
-    setState(() {
-      _isLoading = true;
-    });
-
     for (var c in _conversations) {
       if (c['id'] == _currentConversationId) {
-        c['messages'] = messages;
-        if (messages.length == 1) {
-          c['title'] = _isArabic ? 'تحليل صورة' : 'Image analysis';
-        }
+        c['messages'] = newMessages;
       }
     }
-    await _saveConversations();
-    _scrollToBottom();
+    _saveConversations();
+    setState(() {});
+  }
 
+  Future<void> _analyzeImageRequest(String base64Image, String prompt) async {
     try {
       final dio = Dio();
       dio.options.connectTimeout = const Duration(seconds: 30);
@@ -379,50 +314,156 @@ class _ChatScreenState extends State<ChatScreen>
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        final reply = response.data['reply'] as String;
-        final newMessages = _currentMessages;
-        newMessages.add({
-          'role': 'assistant',
-          'content': reply,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-        for (var c in _conversations) {
-          if (c['id'] == _currentConversationId) {
-            c['messages'] = newMessages;
-          }
-        }
-        await _saveConversations();
-        setState(() {});
+        _addAssistantReply(response.data['reply'] as String);
       } else {
         final errMsg = response.data['error'] ?? 'فشل التحليل';
-        final errMessages = _currentMessages;
-        errMessages.add({'role': 'assistant', 'content': errMsg.toString()});
-        for (var c in _conversations) {
-          if (c['id'] == _currentConversationId) {
-            c['messages'] = errMessages;
-          }
-        }
-        await _saveConversations();
-        setState(() {});
+        _addAssistantReply(errMsg.toString());
       }
     } catch (e) {
-      final errMessages = _currentMessages;
-      errMessages.add({'role': 'assistant', 'content': 'خطأ: $e'});
-      for (var c in _conversations) {
-        if (c['id'] == _currentConversationId) {
-          c['messages'] = errMessages;
-        }
+      _addAssistantReply('خطأ: $e');
+    }
+  }
+
+  Future<void> _retryLastMessage() async {
+    final messages = _currentMessages;
+    if (messages.length < 2) return;
+
+    // إزالة آخر رسالة (رد المساعد)
+    messages.removeLast();
+    // الاحتفاظ بالرسالة الأخيرة من المستخدم
+    final lastUserMsg = messages.isNotEmpty && messages.last['role'] == 'user'
+        ? messages.last
+        : null;
+
+    if (lastUserMsg == null) return;
+
+    setState(() => _isLoading = true);
+
+    for (var c in _conversations) {
+      if (c['id'] == _currentConversationId) {
+        c['messages'] = messages;
       }
-      await _saveConversations();
-      setState(() {});
+    }
+    await _saveConversations();
+
+    try {
+      if (lastUserMsg['image_input'] != null) {
+        await _analyzeImageRequest(
+          lastUserMsg['image_input'] as String,
+          lastUserMsg['content']?.toString() ?? '',
+        );
+        return;
+      }
+
+      final text = lastUserMsg['content']?.toString() ?? '';
+      final memory = await MemoryService.getMemoryAsText(widget.password);
+      final fullMessage = memory.isNotEmpty ? '$memory\n\nرسالة المستخدم: $text' : text;
+
+      final allMessages = _currentMessages;
+      final historyEnd = allMessages.length > 1 ? allMessages.length - 1 : 0;
+      final historyStart = historyEnd > 10 ? historyEnd - 10 : 0;
+      final history = historyEnd > 0
+          ? allMessages.sublist(historyStart, historyEnd)
+          : <Map<String, dynamic>>[];
+
+      final dio = Dio();
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 90);
+
+      final response = await dio.post(
+        WORKER_URL,
+        data: {
+          'message': fullMessage,
+          'language': widget.geminiLanguage,
+          'history': history,
+        },
+        options: Options(
+          headers: {'Content-Type': 'application/json'},
+          responseType: ResponseType.plain,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final responseBody = response.data.toString();
+        final lines = responseBody.split('\n');
+        String fullReply = '';
+        for (final line in lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              final jsonStr = line.substring(6);
+              final data = jsonDecode(jsonStr);
+              final candidates = data['candidates'];
+              if (candidates != null && candidates is List && candidates.isNotEmpty) {
+                final content = candidates[0]['content'];
+                if (content != null) {
+                  final parts = content['parts'];
+                  if (parts != null && parts is List && parts.isNotEmpty) {
+                    final textVal = parts[0]['text'];
+                    if (textVal != null) {
+                      fullReply += textVal.toString();
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+        }
+        if (fullReply.isEmpty) fullReply = _isArabic ? 'عذراً، لم أستطع توليد رد.' : 'Sorry.';
+        _addAssistantReply(fullReply);
+      }
+    } catch (e) {
+      _addAssistantReply('خطأ: $e');
     } finally {
       setState(() => _isLoading = false);
       _scrollToBottom();
     }
   }
 
+  Future<void> _pickImageFromCamera() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+    );
+    if (picked == null) return;
+    await _stagePendingImage(picked);
+  }
+
+  Future<void> _pickImageFromGallery() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+    if (picked == null) return;
+    await _stagePendingImage(picked);
+  }
+
+  Future<void> _stagePendingImage(XFile picked) async {
+    setState(() {
+      _isUploadingImage = true;
+    });
+
+    final bytes = await picked.readAsBytes();
+    final base64Image = base64Encode(bytes);
+
+    if (!mounted) return;
+    setState(() {
+      _pendingImage = picked;
+      _pendingImageBase64 = base64Image;
+      _isUploadingImage = false;
+    });
+  }
+
+  void _removePendingImage() {
+    setState(() {
+      _pendingImage = null;
+      _pendingImageBase64 = null;
+    });
+  }
+
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -457,48 +498,79 @@ class _ChatScreenState extends State<ChatScreen>
   void _showAttachmentOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      backgroundColor: Colors.transparent,
+      builder: (context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF1E1E1E).withValues(alpha: 0.9),
+                  const Color(0xFF16213E).withValues(alpha: 0.9),
+                ],
+              ),
+              border: Border.all(color: const Color(0xFF10A37F).withValues(alpha: 0.3)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10A37F).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.camera_alt, color: Color(0xFF10A37F)),
+                    ),
+                    title: Text(
+                      _isArabic ? 'الكاميرا' : 'Camera',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickImageFromCamera();
+                    },
+                  ),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF764ba2).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.photo_library, color: Color(0xFF764ba2)),
+                    ),
+                    title: Text(
+                      _isArabic ? 'الاستديو' : 'Gallery',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickImageFromGallery();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: Color(0xFF10A37F)),
-              title: Text(
-                _isArabic ? 'الكاميرا' : 'Camera',
-                style: const TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImageFromCamera();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: Color(0xFF10A37F)),
-              title: Text(
-                _isArabic ? 'الاستديو' : 'Gallery',
-                style: const TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImageFromGallery();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );
@@ -511,50 +583,60 @@ class _ChatScreenState extends State<ChatScreen>
     return Directionality(
       textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0E1116),
         resizeToAvoidBottomInset: true,
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF0E1116),
-          elevation: 0,
-          leading: Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openDrawer(),
-            ),
-          ),
-          title: Text(
-            _currentConversation?['title'] ?? 'TalkGPT',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 17,
-            ),
-          ),
-          actions: const [],
-        ),
-        drawer: _buildDrawer(),
-        body: _currentConversationId == null
-            ? _buildWelcomeScreen()
-            : Column(
-                children: [
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: messages.length + (_isLoading ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == messages.length && _isLoading) {
-                          return _buildTypingIndicator();
-                        }
-                        final msg = messages[index];
-                        final isUser = msg['role'] == 'user';
-                        return _buildMessageBubble(msg, isUser, index);
-                      },
-                    ),
-                  ),
-                  _buildInputBar(),
-                ],
+        body: AnimatedBuilder(
+          animation: _gradientController,
+          builder: (context, child) {
+            return Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF0E1116),
+                    Color.lerp(
+                      const Color(0xFF1A1A2E),
+                      const Color(0xFF16213E),
+                      _gradientController.value,
+                    )!,
+                    Color.lerp(
+                      const Color(0xFF16213E),
+                      const Color(0xFF0F3460),
+                      _gradientController.value,
+                    )!,
+                    const Color(0xFF0E1116),
+                  ],
+                  stops: const [0.0, 0.35, 0.65, 1.0],
+                ),
               ),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _buildGlassAppBar(messages),
+                    Expanded(
+                      child: _currentConversationId == null
+                          ? _buildWelcomeScreen()
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              itemCount: messages.length + (_isLoading ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (index == messages.length && _isLoading) {
+                                  return _buildTypingIndicator();
+                                }
+                                final msg = messages[index];
+                                final isUser = msg['role'] == 'user';
+                                return _buildMessageBubble(msg, isUser, index);
+                              },
+                            ),
+                    ),
+                    _buildGlassInputBar(),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
         floatingActionButton: _currentConversationId == null
             ? FloatingActionButton.extended(
                 onPressed: _createNewConversation,
@@ -563,6 +645,50 @@ class _ChatScreenState extends State<ChatScreen>
                 label: Text(_newChatText, style: const TextStyle(color: Colors.white)),
               )
             : null,
+        drawer: _buildGlassDrawer(),
+      ),
+    );
+  }
+
+  Widget _buildGlassAppBar(List<Map<String, dynamic>> messages) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        border: Border(
+          bottom: BorderSide(
+            color: const Color(0xFF10A37F).withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _currentConversation?['title'] ?? 'TalkGPT',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 17,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (_currentConversationId != null)
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white70),
+              tooltip: _retryText,
+              onPressed: _isLoading ? null : _retryLastMessage,
+            ),
+        ],
       ),
     );
   }
@@ -574,18 +700,32 @@ class _ChatScreenState extends State<ChatScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10A37F).withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.auto_awesome, size: 60, color: Color(0xFF10A37F)),
+            AnimatedBuilder(
+              animation: _glowController,
+              builder: (context, child) {
+                return Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10A37F).withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10A37F).withValues(
+                          alpha: 0.2 + (_glowController.value * 0.3),
+                        ),
+                        blurRadius: 30 + (_glowController.value * 20),
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.auto_awesome, size: 70, color: Color(0xFF10A37F)),
+                );
+              },
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
             const Text(
               'TalkGPT',
-              style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
@@ -599,93 +739,135 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
-  Widget _buildDrawer() {
+  Widget _buildGlassDrawer() {
     return Drawer(
-      backgroundColor: const Color(0xFF0E1116),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+      backgroundColor: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF16213E).withValues(alpha: 0.95),
+                  const Color(0xFF0E1116).withValues(alpha: 0.95),
+                ],
+              ),
+              border: Border(
+                right: BorderSide(color: const Color(0xFF10A37F).withValues(alpha: 0.3)),
+              ),
+            ),
+            child: SafeArea(
+              child: Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10A37F),
-                      borderRadius: BorderRadius.circular(10),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF10A37F), Color(0xFF764ba2)],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'TalkGPT',
+                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
                   ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'TalkGPT',
-                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF10A37F), Color(0xFF764ba2)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF10A37F).withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _createNewConversation();
+                        },
+                        icon: const Icon(Icons.add),
+                        label: Text(_newChatText),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Divider(color: const Color(0xFF10A37F).withValues(alpha: 0.2)),
+                  Expanded(
+                    child: _conversations.isEmpty
+                        ? Center(
+                            child: Text(
+                              _noConversationsText,
+                              style: const TextStyle(color: Colors.white38),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _conversations.length,
+                            itemBuilder: (context, index) {
+                              final conv = _conversations[index];
+                              final isSelected = conv['id'] == _currentConversationId;
+                              return ListTile(
+                                selected: isSelected,
+                                selectedTileColor: const Color(0xFF10A37F).withValues(alpha: 0.15),
+                                leading: const Icon(Icons.chat_bubble_outline, color: Colors.white60, size: 20),
+                                title: Text(
+                                  conv['title']?.toString() ?? _newChatText,
+                                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                  onPressed: () => _deleteConversation(conv['id'] as String),
+                                ),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  _selectConversation(conv['id'] as String);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                  Divider(color: const Color(0xFF10A37F).withValues(alpha: 0.2)),
+                  ListTile(
+                    leading: const Icon(Icons.settings, color: Colors.white70),
+                    title: Text(_settingsText, style: const TextStyle(color: Colors.white)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openSettings();
+                    },
                   ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _createNewConversation();
-                },
-                icon: const Icon(Icons.add),
-                label: Text(_newChatText),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10A37F),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Divider(color: Colors.white12),
-            Expanded(
-              child: _conversations.isEmpty
-                  ? Center(
-                      child: Text(_noConversationsText, style: const TextStyle(color: Colors.white38)),
-                    )
-                  : ListView.builder(
-                      itemCount: _conversations.length,
-                      itemBuilder: (context, index) {
-                        final conv = _conversations[index];
-                        final isSelected = conv['id'] == _currentConversationId;
-                        return ListTile(
-                          selected: isSelected,
-                          selectedTileColor: const Color(0xFF10A37F).withValues(alpha: 0.15),
-                          leading: const Icon(Icons.chat_bubble_outline, color: Colors.white60, size: 20),
-                          title: Text(
-                            conv['title']?.toString() ?? _newChatText,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                            onPressed: () => _deleteConversation(conv['id'] as String),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _selectConversation(conv['id'] as String);
-                          },
-                        );
-                      },
-                    ),
-            ),
-            const Divider(color: Colors.white12),
-            ListTile(
-              leading: const Icon(Icons.settings, color: Colors.white70),
-              title: Text(_settingsText, style: const TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _openSettings();
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -693,6 +875,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   Widget _buildMessageBubble(Map<String, dynamic> msg, bool isUser, int index) {
     final hasImage = msg['image_input'] != null;
+    final isLastAssistant = !isUser && index == _currentMessages.length - 1;
 
     return Column(
       crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -701,88 +884,119 @@ class _ChatScreenState extends State<ChatScreen>
           alignment: isUser
               ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
               : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            padding: const EdgeInsets.all(14),
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
-            decoration: BoxDecoration(
-              color: isUser ? const Color(0xFF10A37F) : const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (hasImage)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.memory(
-                      base64Decode(msg['image_input'] as String),
-                      fit: BoxFit.cover,
-                      height: 200,
-                    ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.all(14),
+                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
+                decoration: BoxDecoration(
+                  gradient: isUser
+                      ? const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF10A37F), Color(0xFF0F8B6C)],
+                        )
+                      : LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.white.withValues(alpha: 0.08),
+                            Colors.white.withValues(alpha: 0.03),
+                          ],
+                        ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: isUser
+                        ? const Color(0xFF10A37F).withValues(alpha: 0.5)
+                        : Colors.white.withValues(alpha: 0.1),
                   ),
-                if (hasImage) const SizedBox(height: 8),
-                if (isUser)
-                  SelectableText(
-                    msg['content']?.toString() ?? '',
-                    style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
-                    textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                  )
-                else
-                  MarkdownBody(
-                    data: msg['content']?.toString() ?? '',
-                    selectable: true,
-                    styleSheet: MarkdownStyleSheet(
-                      p: TextStyle(
-                        color: Colors.white,
-                        fontSize: widget.fontSize,
-                        height: 1.6,
-                      ),
-                      h1: TextStyle(
-                        color: Colors.white,
-                        fontSize: widget.fontSize + 8,
-                        fontWeight: FontWeight.bold,
-                        height: 1.8,
-                      ),
-                      h2: TextStyle(
-                        color: const Color(0xFF10A37F),
-                        fontSize: widget.fontSize + 5,
-                        fontWeight: FontWeight.bold,
-                        height: 1.8,
-                      ),
-                      h3: TextStyle(
-                        color: Colors.white,
-                        fontSize: widget.fontSize + 3,
-                        fontWeight: FontWeight.w600,
-                        height: 1.6,
-                      ),
-                      listBullet: TextStyle(
-                        color: const Color(0xFF10A37F),
-                        fontSize: widget.fontSize,
-                      ),
-                      code: TextStyle(
-                        color: const Color(0xFF10A37F),
-                        backgroundColor: Colors.black.withValues(alpha: 0.4),
-                        fontFamily: 'monospace',
-                        fontSize: widget.fontSize - 1,
-                      ),
-                      codeblockDecoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      blockquoteDecoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        border: const Border(
-                          left: BorderSide(color: Color(0xFF10A37F), width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isUser
+                          ? const Color(0xFF10A37F).withValues(alpha: 0.2)
+                          : Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (hasImage)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.memory(
+                          base64Decode(msg['image_input'] as String),
+                          fit: BoxFit.cover,
+                          height: 200,
                         ),
                       ),
-                      tableBorder: TableBorder.all(color: Colors.white24),
-                      tableCellsPadding: const EdgeInsets.all(8),
-                      strong: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                      em: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white70),
-                    ),
-                  ),
-              ],
+                    if (hasImage) const SizedBox(height: 8),
+                    if (isUser)
+                      SelectableText(
+                        msg['content']?.toString() ?? '',
+                        style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
+                        textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                      )
+                    else
+                      MarkdownBody(
+                        data: msg['content']?.toString() ?? '',
+                        selectable: true,
+                        styleSheet: MarkdownStyleSheet(
+                          p: TextStyle(
+                            color: Colors.white,
+                            fontSize: widget.fontSize,
+                            height: 1.6,
+                          ),
+                          h1: TextStyle(
+                            color: Colors.white,
+                            fontSize: widget.fontSize + 8,
+                            fontWeight: FontWeight.bold,
+                            height: 1.8,
+                          ),
+                          h2: TextStyle(
+                            color: const Color(0xFF10A37F),
+                            fontSize: widget.fontSize + 5,
+                            fontWeight: FontWeight.bold,
+                            height: 1.8,
+                          ),
+                          h3: TextStyle(
+                            color: Colors.white,
+                            fontSize: widget.fontSize + 3,
+                            fontWeight: FontWeight.w600,
+                            height: 1.6,
+                          ),
+                          listBullet: TextStyle(
+                            color: const Color(0xFF10A37F),
+                            fontSize: widget.fontSize,
+                          ),
+                          code: TextStyle(
+                            color: const Color(0xFF10A37F),
+                            backgroundColor: Colors.black.withValues(alpha: 0.4),
+                            fontFamily: 'monospace',
+                            fontSize: widget.fontSize - 1,
+                          ),
+                          codeblockDecoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          blockquoteDecoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            border: const Border(left: BorderSide(color: Color(0xFF10A37F), width: 3)),
+                          ),
+                          tableBorder: TableBorder.all(color: Colors.white24),
+                          tableCellsPadding: const EdgeInsets.all(8),
+                          strong: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                          em: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white70),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -793,14 +1007,21 @@ class _ChatScreenState extends State<ChatScreen>
           child: PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz, color: Colors.white38, size: 18),
             color: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             onSelected: (value) async {
               if (value == 'copy') {
                 await Clipboard.setData(ClipboardData(text: msg['content']?.toString() ?? ''));
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(_copiedText), duration: const Duration(seconds: 1)),
+                    SnackBar(
+                      content: Text(_copiedText),
+                      duration: const Duration(seconds: 1),
+                      backgroundColor: const Color(0xFF10A37F),
+                    ),
                   );
                 }
+              } else if (value == 'retry' && isLastAssistant) {
+                _retryLastMessage();
               }
             },
             itemBuilder: (context) => [
@@ -814,6 +1035,17 @@ class _ChatScreenState extends State<ChatScreen>
                   ],
                 ),
               ),
+              if (isLastAssistant)
+                PopupMenuItem(
+                  value: 'retry',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.refresh, color: Color(0xFF10A37F), size: 18),
+                      const SizedBox(width: 8),
+                      Text(_retryText, style: const TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -827,118 +1059,8 @@ class _ChatScreenState extends State<ChatScreen>
       child: AnimatedBuilder(
         animation: _glowController,
         builder: (context, child) {
-          return Container(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: const Color(0xFF10A37F).withValues(alpha: 0.3 + (_glowController.value * 0.5)),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF10A37F).withValues(alpha: 0.15 + (_glowController.value * 0.35)),
-                  blurRadius: 10 + (_glowController.value * 15),
-                  spreadRadius: 1 + (_glowController.value * 2),
-                ),
-              ],
-            ),
-            child: AnimatedBuilder(
-              animation: _dotsController,
-              builder: (context, child) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(3, (i) => _buildDot(i)),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildDot(int index) {
-    final t = _dotsController.value;
-    final offset = (t * 3) % 3;
-    final isActive = offset >= index && offset < index + 1;
-    final scale = isActive ? 1.5 : 1.0;
-
-    return Transform.scale(
-      scale: scale,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 3),
-        height: 10,
-        width: 10,
-        decoration: BoxDecoration(
-          color: isActive
-              ? const Color(0xFF10A37F)
-              : const Color(0xFF10A37F).withValues(alpha: 0.4),
-          shape: BoxShape.circle,
-          boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF10A37F).withValues(alpha: 0.8),
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : null,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputBar() {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        color: const Color(0xFF0E1116),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: Colors.white70, size: 28),
-              onPressed: _showAttachmentOptions,
-              tooltip: _isArabic ? 'إرفاق' : 'Attach',
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
-                child: TextField(
-                  controller: _controller,
-                  style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
-                  maxLines: null,
-                  minLines: 1,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                  decoration: InputDecoration(
-                    hintText: _hintText,
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                    filled: true,
-                    fillColor: const Color(0xFF1E1E1E),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              icon: const Icon(Icons.send, color: Color(0xFF10A37F)),
-              onPressed: _sendMessage,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+             
