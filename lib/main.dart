@@ -23,8 +23,8 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
   String _fontFamily = 'Default';
   String _password = '';
   bool _loaded = false;
-  bool _hasPassword = false;
   bool _unlocked = false;
+  int _reloadKey = 0;
 
   @override
   void initState() {
@@ -34,32 +34,24 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final hasPass = await MemoryService.hasPassword();
 
     setState(() {
       _locale = Locale(prefs.getString('app_language') ?? 'ar');
       _fontSize = prefs.getDouble('font_size') ?? 14.0;
       _geminiLanguage = prefs.getString('gemini_language') ?? 'ar';
       _fontFamily = prefs.getString('font_family') ?? 'Default';
-      _hasPassword = hasPass;
-      _unlocked = false;
       _loaded = true;
     });
   }
 
-  void _updateSettings(Locale locale, double fontSize, String geminiLang) {
+  void _updateSettings(Locale locale, double fontSize, String geminiLang) async {
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
       _locale = locale;
       _fontSize = fontSize;
       _geminiLanguage = geminiLang;
-    });
-    _loadFontFamily();
-  }
-
-  Future<void> _loadFontFamily() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
       _fontFamily = prefs.getString('font_family') ?? 'Default';
+      _reloadKey++;
     });
   }
 
@@ -67,45 +59,44 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
     setState(() {
       _password = password;
       _unlocked = true;
-      _hasPassword = true;
     });
   }
 
-  TextTheme _buildTextTheme(TextTheme base) {
-    TextStyle applyFont(TextStyle? style) {
-      if (style == null) return const TextStyle();
-      switch (_fontFamily) {
-        case 'Cairo':
-          return GoogleFonts.cairo(textStyle: style);
-        case 'Tajawal':
-          return GoogleFonts.tajawal(textStyle: style);
-        case 'Almarai':
-          return GoogleFonts.almarai(textStyle: style);
-        case 'Amiri':
-          return GoogleFonts.amiri(textStyle: style);
-        case 'Changa':
-          return GoogleFonts.changa(textStyle: style);
-        default:
-          return style;
-      }
+  TextStyle _applyFont(TextStyle? style) {
+    if (style == null) return const TextStyle();
+    switch (_fontFamily) {
+      case 'Cairo':
+        return GoogleFonts.cairo(textStyle: style);
+      case 'Tajawal':
+        return GoogleFonts.tajawal(textStyle: style);
+      case 'Almarai':
+        return GoogleFonts.almarai(textStyle: style);
+      case 'Amiri':
+        return GoogleFonts.amiri(textStyle: style);
+      case 'Changa':
+        return GoogleFonts.changa(textStyle: style);
+      default:
+        return style;
     }
+  }
 
+  TextTheme _buildTextTheme(TextTheme base) {
     return base.copyWith(
-      bodyLarge: applyFont(base.bodyLarge),
-      bodyMedium: applyFont(base.bodyMedium),
-      bodySmall: applyFont(base.bodySmall),
-      titleLarge: applyFont(base.titleLarge),
-      titleMedium: applyFont(base.titleMedium),
-      titleSmall: applyFont(base.titleSmall),
-      displayLarge: applyFont(base.displayLarge),
-      displayMedium: applyFont(base.displayMedium),
-      displaySmall: applyFont(base.displaySmall),
-      headlineLarge: applyFont(base.headlineLarge),
-      headlineMedium: applyFont(base.headlineMedium),
-      headlineSmall: applyFont(base.headlineSmall),
-      labelLarge: applyFont(base.labelLarge),
-      labelMedium: applyFont(base.labelMedium),
-      labelSmall: applyFont(base.labelSmall),
+      bodyLarge: _applyFont(base.bodyLarge),
+      bodyMedium: _applyFont(base.bodyMedium),
+      bodySmall: _applyFont(base.bodySmall),
+      titleLarge: _applyFont(base.titleLarge),
+      titleMedium: _applyFont(base.titleMedium),
+      titleSmall: _applyFont(base.titleSmall),
+      displayLarge: _applyFont(base.displayLarge),
+      displayMedium: _applyFont(base.displayMedium),
+      displaySmall: _applyFont(base.displaySmall),
+      headlineLarge: _applyFont(base.headlineLarge),
+      headlineMedium: _applyFont(base.headlineMedium),
+      headlineSmall: _applyFont(base.headlineSmall),
+      labelLarge: _applyFont(base.labelLarge),
+      labelMedium: _applyFont(base.labelMedium),
+      labelSmall: _applyFont(base.labelSmall),
     );
   }
 
@@ -138,6 +129,7 @@ class _TalkGPTAppState extends State<TalkGPTApp> {
     );
 
     return MaterialApp(
+      key: ValueKey(_reloadKey),
       title: 'TalkGPT',
       debugShowCheckedModeBanner: false,
       locale: _locale,
