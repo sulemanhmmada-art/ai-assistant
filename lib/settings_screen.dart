@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:local_auth/local_auth.dart';
 import 'memory_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -8,6 +9,7 @@ class SettingsScreen extends StatefulWidget {
   final String geminiLanguage;
   final Locale locale;
   final String password;
+  final String selectedModel;
 
   const SettingsScreen({
     super.key,
@@ -15,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
     required this.geminiLanguage,
     required this.locale,
     required this.password,
+    required this.selectedModel,
   });
 
   @override
@@ -25,7 +28,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late double _fontSize;
   late String _geminiLanguage;
   late Locale _locale;
+  late String _selectedModel;
   String _fontFamily = 'Default';
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+
+  final LocalAuthentication _auth = LocalAuthentication();
 
   bool get _isArabic => _locale.languageCode == 'ar';
 
@@ -35,10 +43,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _fontSize = widget.fontSize;
     _geminiLanguage = widget.geminiLanguage;
     _locale = widget.locale;
-    _loadFontFamily();
+    _selectedModel = widget.selectedModel;
+    _loadPrefs();
+    _checkBiometric();
   }
 
-  Future<void> _loadFontFamily() async {
+  Future<void> _checkBiometric() async {
+    bool available = false;
+    try {
+      final canCheck = await _auth.canCheckBiometrics;
+      final isSupported = await _auth.isDeviceSupported();
+      final biometrics = await _auth.getAvailableBiometrics();
+      available = canCheck && isSupported && biometrics.isNotEmpty;
+    } catch (_) {}
+
+    final enabled = await MemoryService.isBiometricEnabled();
+
+    setState(() {
+      _biometricAvailable = available;
+      _biometricEnabled = enabled;
+    });
+  }
+
+  Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _fontFamily = prefs.getString('font_family') ?? 'Default';
@@ -68,11 +95,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  Future<void> _saveModel(String model) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_model', model);
+    setState(() {
+      _selectedModel = model;
+    });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (value && !_biometricAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isArabic
+              ? 'البصمة غير متاحة على هذا الجهاز'
+              : 'Biometric not available'),
+        ),
+      );
+      return;
+    }
+
+    if (value) {
+      try {
+        final didAuth = await _auth.authenticate(
+          localizedReason: _isArabic
+              ? 'أكد هويتك لتفعيل البصمة'
+              : 'Authenticate to enable biometric',
+          options: const AuthenticationOptions(
+            biometricOnly: true,
+            stickyAuth: true,
+          ),
+        );
+        if (!didAuth) return;
+      } catch (_) {
+        return;
+      }
+    }
+
+    await MemoryService.setBiometricEnabled(value);
+    setState(() {
+      _biometricEnabled = value;
+    });
+
+    if (!value) {
+      await MemoryService.deleteStoredPassword();
+    } else {
+      // نضمن تخزين كلمة المرور
+      final stored = await MemoryService.getStoredPassword();
+      if (stored == null) {
+        await MemoryService.saveStoredPassword(widget.password);
+      }
+    }
+  }
+
   void _returnResult() {
     Navigator.pop(context, {
       'locale': _locale,
       'fontSize': _fontSize,
       'geminiLanguage': _geminiLanguage,
+      'model': _selectedModel,
     });
   }
 
@@ -82,7 +163,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isArabic ? '✅ تم حذف جميع المحادثات' : '✅ All conversations deleted'),
+            content: Text(_isArabic
+                ? '✅ تم حذف جميع المحادثات'
+                : '✅ All conversations deleted'),
           ),
         );
       }
@@ -105,7 +188,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isArabic ? '✅ تم حذف الذاكرة' : '✅ Memory deleted'),
+            content: Text(_isArabic
+                ? '✅ تم حذف الذاكرة'
+                : '✅ Memory deleted'),
           ),
         );
       }
@@ -228,9 +313,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => Column(
           children: [
             const SizedBox(height: 12),
             Container(
@@ -251,8 +340,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            ...fonts.map((font) => _buildFontOption(font)),
-            const SizedBox(height: 12),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                children: fonts.map((font) => _buildFontOption(font)).toList(),
+              ),
+            ),
           ],
         ),
       ),
@@ -293,10 +386,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : (_isArabic ? 'معاينة الخط' : 'Font preview'),
         style: getFontStyle(13, FontWeight.w400).copyWith(color: Colors.white54),
       ),
-      onTap: () {
-        _saveFontFamily(font);
-        Navigator.pop(context);
+      onTap: () async {
+        await _saveFontFamily(font);
+        if (mounted) Navigator.pop(context);
+        if (mounted) _returnResult();
       },
+    );
+  }
+
+  void _showModelPicker() {
+    final models = [
+      {'id': 'auto', 'name_ar': 'تلقائي (3.6 → 2.5 → Pollinations)', 'name_en': 'Auto (3.6 → 2.5 → Pollinations)', 'icon': Icons.auto_awesome},
+      {'id': 'gemini-3.6', 'name_ar': 'Gemini 3.6 Flash', 'name_en': 'Gemini 3.6 Flash', 'icon': Icons.star},
+      {'id': 'gemini-2.5', 'name_ar': 'Gemini 2.5 Flash', 'name_en': 'Gemini 2.5 Flash', 'icon': Icons.flash_on},
+      {'id': 'pollinations', 'name_ar': 'Pollinations (مجاني)', 'name_en': 'Pollinations (Free)', 'icon': Icons.cloud},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _isArabic ? 'اختر النموذج' : 'Choose Model',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...models.map((m) {
+              final isSelected = _selectedModel == m['id'];
+              return ListTile(
+                leading: Icon(
+                  m['icon'] as IconData,
+                  color: isSelected ? const Color(0xFF10A37F) : Colors.white54,
+                ),
+                title: Text(
+                  _isArabic ? m['name_ar'] as String : m['name_en'] as String,
+                  style: TextStyle(
+                    color: isSelected ? const Color(0xFF10A37F) : Colors.white,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle, color: Color(0xFF10A37F))
+                    : null,
+                onTap: () async {
+                  await _saveModel(m['id'] as String);
+                  if (mounted) Navigator.pop(context);
+                  if (mounted) _returnResult();
+                },
+              );
+            }),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 
@@ -320,6 +482,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         body: ListView(
           children: [
+            _sectionTitle(_isArabic ? 'النموذج' : 'Model'),
+            ListTile(
+              leading: const Icon(Icons.smart_toy, color: Color(0xFF10A37F)),
+              title: Text(
+                _isArabic ? 'نموذج الذكاء الاصطناعي' : 'AI Model',
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _modelName(),
+                style: const TextStyle(color: Colors.white54),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+              onTap: _showModelPicker,
+            ),
+            const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'المظهر' : 'Appearance'),
             ListTile(
               leading: const Icon(Icons.text_fields, color: Color(0xFF10A37F)),
@@ -439,6 +616,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'الأمان' : 'Security'),
+            if (_biometricAvailable)
+              SwitchListTile(
+                secondary: const Icon(Icons.fingerprint, color: Color(0xFF10A37F)),
+                title: Text(
+                  _isArabic ? 'الدخول بالبصمة' : 'Biometric Login',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  _isArabic
+                      ? 'استخدم بصمة الأصابع للدخول'
+                      : 'Use fingerprint to log in',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                value: _biometricEnabled,
+                activeColor: const Color(0xFF10A37F),
+                onChanged: _toggleBiometric,
+              ),
             ListTile(
               leading: const Icon(Icons.lock, color: Color(0xFF10A37F)),
               title: Text(
@@ -536,13 +730,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const ListTile(
               leading: Icon(Icons.info_outline, color: Color(0xFF10A37F)),
               title: Text('TalkGPT', style: TextStyle(color: Colors.white)),
-              subtitle: Text('v10.0.0', style: TextStyle(color: Colors.white54)),
+              subtitle: Text('v13.0.0', style: TextStyle(color: Colors.white54)),
             ),
             const SizedBox(height: 20),
           ],
         ),
       ),
     );
+  }
+
+  String _modelName() {
+    switch (_selectedModel) {
+      case 'gemini-3.6':
+        return 'Gemini 3.6 Flash';
+      case 'gemini-2.5':
+        return 'Gemini 2.5 Flash';
+      case 'pollinations':
+        return 'Pollinations';
+      default:
+        return _isArabic ? 'تلقائي' : 'Auto';
+    }
   }
 
   String _geminiLanguageName() {
