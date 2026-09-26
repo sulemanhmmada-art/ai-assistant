@@ -30,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late Locale _locale;
   late String _selectedModel;
   String _fontFamily = 'Default';
+  String _backgroundType = 'particles';
   bool _biometricAvailable = false;
   bool _biometricEnabled = false;
 
@@ -67,8 +68,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    final bg = await MemoryService.getBackgroundType();
     setState(() {
       _fontFamily = prefs.getString('font_family') ?? 'Default';
+      _backgroundType = bg;
     });
   }
 
@@ -140,7 +143,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!value) {
       await MemoryService.deleteStoredPassword();
     } else {
-      // نضمن تخزين كلمة المرور
       final stored = await MemoryService.getStoredPassword();
       if (stored == null) {
         await MemoryService.saveStoredPassword(widget.password);
@@ -154,6 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'fontSize': _fontSize,
       'geminiLanguage': _geminiLanguage,
       'model': _selectedModel,
+      'background': _backgroundType,
     });
   }
 
@@ -275,7 +278,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(_isArabic ? 'إلغاء' : 'Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10A37F)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF764ba2)),
             onPressed: () async {
               if (newController.text.trim().length < 4) return;
               if (newController.text.trim() != confirmController.text.trim()) return;
@@ -374,7 +377,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return ListTile(
       leading: isSelected
-          ? const Icon(Icons.check_circle, color: Color(0xFF10A37F))
+          ? const Icon(Icons.check_circle, color: Color(0xFF764ba2))
           : const Icon(Icons.circle_outlined, color: Colors.white30),
       title: Text(
         font == 'Default' ? (_isArabic ? 'افتراضي' : 'Default') : font,
@@ -389,8 +392,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: () async {
         await _saveFontFamily(font);
         if (mounted) Navigator.pop(context);
-        if (mounted) _returnResult();
       },
+    );
+  }
+
+  void _showBackgroundPicker() {
+    final backgrounds = [
+      {'id': 'particles', 'name_ar': 'جزيئات بلورية', 'name_en': 'Crystal Particles', 'icon': Icons.bubble_chart},
+      {'id': 'aurora', 'name_ar': 'شفق قطبي', 'name_en': 'Aurora', 'icon': Icons.gradient},
+      {'id': 'wave', 'name_ar': 'موجات سائلة', 'name_en': 'Liquid Wave', 'icon': Icons.waves},
+      {'id': 'gradient', 'name_ar': 'تدفق متدرج', 'name_en': 'Gradient Flow', 'icon': Icons.blur_on},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _isArabic ? 'اختر الخلفية' : 'Choose Background',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...backgrounds.map((bg) {
+              final isSelected = _backgroundType == bg['id'];
+              return ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF764ba2), Color(0xFF10A37F)],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(bg['icon'] as IconData, color: Colors.white, size: 20),
+                ),
+                title: Text(
+                  _isArabic ? bg['name_ar'] as String : bg['name_en'] as String,
+                  style: TextStyle(
+                    color: isSelected ? const Color(0xFF764ba2) : Colors.white,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle, color: Color(0xFF764ba2))
+                    : null,
+                onTap: () async {
+                  await MemoryService.setBackgroundType(bg['id'] as String);
+                  setState(() {
+                    _backgroundType = bg['id'] as String;
+                  });
+                  if (mounted) Navigator.pop(context);
+                },
+              );
+            }),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 
@@ -436,22 +514,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return ListTile(
                 leading: Icon(
                   m['icon'] as IconData,
-                  color: isSelected ? const Color(0xFF10A37F) : Colors.white54,
+                  color: isSelected ? const Color(0xFF764ba2) : Colors.white54,
                 ),
                 title: Text(
                   _isArabic ? m['name_ar'] as String : m['name_en'] as String,
                   style: TextStyle(
-                    color: isSelected ? const Color(0xFF10A37F) : Colors.white,
+                    color: isSelected ? const Color(0xFF764ba2) : Colors.white,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
                 trailing: isSelected
-                    ? const Icon(Icons.check_circle, color: Color(0xFF10A37F))
+                    ? const Icon(Icons.check_circle, color: Color(0xFF764ba2))
                     : null,
                 onTap: () async {
                   await _saveModel(m['id'] as String);
                   if (mounted) Navigator.pop(context);
-                  if (mounted) _returnResult();
                 },
               );
             }),
@@ -484,7 +561,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle(_isArabic ? 'النموذج' : 'Model'),
             ListTile(
-              leading: const Icon(Icons.smart_toy, color: Color(0xFF10A37F)),
+              leading: const Icon(Icons.smart_toy, color: Color(0xFF764ba2)),
               title: Text(
                 _isArabic ? 'نموذج الذكاء الاصطناعي' : 'AI Model',
                 style: const TextStyle(color: Colors.white),
@@ -499,7 +576,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'المظهر' : 'Appearance'),
             ListTile(
-              leading: const Icon(Icons.text_fields, color: Color(0xFF10A37F)),
+              leading: const Icon(Icons.wallpaper, color: Color(0xFF764ba2)),
+              title: Text(
+                _isArabic ? 'الخلفية' : 'Background',
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _backgroundName(),
+                style: const TextStyle(color: Colors.white54),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+              onTap: _showBackgroundPicker,
+            ),
+            ListTile(
+              leading: const Icon(Icons.text_fields, color: Color(0xFF764ba2)),
               title: Text(
                 _isArabic ? 'حجم الخط' : 'Font Size',
                 style: const TextStyle(color: Colors.white),
@@ -520,7 +610,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       min: 10,
                       max: 24,
                       divisions: 14,
-                      activeColor: const Color(0xFF10A37F),
+                      activeColor: const Color(0xFF764ba2),
                       label: '${_fontSize.toInt()}',
                       onChanged: (value) {
                         setState(() => _fontSize = value);
@@ -533,7 +623,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.font_download, color: Color(0xFF10A37F)),
+              leading: const Icon(Icons.font_download, color: Color(0xFF764ba2)),
               title: Text(
                 _isArabic ? 'نوع الخط' : 'Font Family',
                 style: const TextStyle(color: Colors.white),
@@ -550,7 +640,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'اللغة' : 'Language'),
             ListTile(
-              leading: const Icon(Icons.language, color: Color(0xFF10A37F)),
+              leading: const Icon(Icons.language, color: Color(0xFF764ba2)),
               title: Text(
                 _isArabic ? 'لغة التطبيق' : 'App Language',
                 style: const TextStyle(color: Colors.white),
@@ -590,7 +680,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 16),
             ListTile(
-              leading: const Icon(Icons.record_voice_over, color: Color(0xFF10A37F)),
+              leading: const Icon(Icons.record_voice_over, color: Color(0xFF764ba2)),
               title: Text(
                 _isArabic ? 'لغة ردود الذكاء الاصطناعي' : 'AI Response Language',
                 style: const TextStyle(color: Colors.white),
@@ -618,7 +708,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionTitle(_isArabic ? 'الأمان' : 'Security'),
             if (_biometricAvailable)
               SwitchListTile(
-                secondary: const Icon(Icons.fingerprint, color: Color(0xFF10A37F)),
+                secondary: const Icon(Icons.fingerprint, color: Color(0xFF764ba2)),
                 title: Text(
                   _isArabic ? 'الدخول بالبصمة' : 'Biometric Login',
                   style: const TextStyle(color: Colors.white),
@@ -630,11 +720,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 value: _biometricEnabled,
-                activeColor: const Color(0xFF10A37F),
+                activeColor: const Color(0xFF764ba2),
                 onChanged: _toggleBiometric,
               ),
             ListTile(
-              leading: const Icon(Icons.lock, color: Color(0xFF10A37F)),
+              leading: const Icon(Icons.lock, color: Color(0xFF764ba2)),
               title: Text(
                 _isArabic ? 'تغيير كلمة المرور' : 'Change Password',
                 style: const TextStyle(color: Colors.white),
@@ -728,9 +818,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(color: Colors.white12),
             _sectionTitle(_isArabic ? 'حول' : 'About'),
             const ListTile(
-              leading: Icon(Icons.info_outline, color: Color(0xFF10A37F)),
+              leading: Icon(Icons.info_outline, color: Color(0xFF764ba2)),
               title: Text('TalkGPT', style: TextStyle(color: Colors.white)),
-              subtitle: Text('v13.0.0', style: TextStyle(color: Colors.white54)),
+              subtitle: Text('v14.0.0', style: TextStyle(color: Colors.white54)),
             ),
             const SizedBox(height: 20),
           ],
@@ -752,6 +842,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String _backgroundName() {
+    switch (_backgroundType) {
+      case 'aurora':
+        return _isArabic ? 'شفق قطبي' : 'Aurora';
+      case 'wave':
+        return _isArabic ? 'موجات سائلة' : 'Liquid Wave';
+      case 'gradient':
+        return _isArabic ? 'تدفق متدرج' : 'Gradient Flow';
+      default:
+        return _isArabic ? 'جزيئات بلورية' : 'Crystal Particles';
+    }
+  }
+
   String _geminiLanguageName() {
     switch (_geminiLanguage) {
       case 'ar': return 'العربية';
@@ -766,7 +869,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _langButton({required String label, required bool selected, required VoidCallback onTap}) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: selected ? const Color(0xFF10A37F) : const Color(0xFF1E1E1E),
+        backgroundColor: selected ? const Color(0xFF764ba2) : const Color(0xFF1E1E1E),
         foregroundColor: Colors.white,
         minimumSize: const Size(double.infinity, 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -785,7 +888,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _geminiLanguage = code);
         _saveGeminiLanguage(code);
       },
-      selectedColor: const Color(0xFF10A37F),
+      selectedColor: const Color(0xFF764ba2),
       backgroundColor: const Color(0xFF1E1E1E),
       labelStyle: const TextStyle(color: Colors.white),
     );
@@ -797,7 +900,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Text(
         title,
         style: const TextStyle(
-          color: Color(0xFF10A37F),
+          color: Color(0xFF764ba2),
           fontSize: 13,
           fontWeight: FontWeight.bold,
           letterSpacing: 1,
