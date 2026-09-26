@@ -16,7 +16,6 @@ workflows:
         script: |
           python3 - <<'PY'
           from pathlib import Path
-
           for filename in ["android/app/build.gradle", "android/app/build.gradle.kts"]:
               f = Path(filename)
               if f.exists():
@@ -26,24 +25,20 @@ workflows:
                   text = text.replace("compileSdkVersion 34", "compileSdkVersion 36")
                   text = text.replace("compileSdk 34", "compileSdk 36")
                   f.write_text(text)
-                  print(f"Updated {filename}")
           PY
 
       - name: Add permissions
         script: |
           python3 - <<'PY'
           from pathlib import Path
-
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           text = manifest.read_text()
-
           permissions = [
               '<uses-permission android:name="android.permission.INTERNET"/>',
               '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>',
               '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
               '<uses-permission android:name="android.permission.CAMERA"/>'
           ]
-
           lines = text.splitlines()
           new_perms = [p for p in permissions if p not in text]
           if new_perms:
@@ -53,8 +48,25 @@ workflows:
                           lines.insert(i + 1 + j, '    ' + p)
                       break
               manifest.write_text('\n'.join(lines) + '\n')
+          PY
 
-          print("Permissions configured.")
+      - name: Install flutter_launcher_icons
+        script: |
+          flutter pub add --dev flutter_launcher_icons
+
+      - name: Create app icon
+        script: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          
+          # إنشاء مجلد الأصول
+          assets_dir = Path("assets")
+          assets_dir.mkdir(exist_ok=True)
+          
+          # الأيقونة (Base64 لصورة صغيرة - سنستخدم أيقونة مؤقتة)
+          # ملاحظة: ستحتاج إلى رفع الأيقونة إلى assets/icon.png يدوياً
+          print("Assets directory created. Please upload icon.png manually.")
           PY
 
       - name: Get dependencies
