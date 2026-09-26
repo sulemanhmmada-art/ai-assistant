@@ -1,7 +1,7 @@
 name: talkgpt
 description: TalkGPT - مساعد ذكي بالعربية
 publish_to: 'none'
-version: 9.0.0+9
+version: 10.0.0+10
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -17,6 +17,8 @@ dependencies:
   crypto: ^3.0.3
   encrypt: ^5.0.3
   pointycastle: ^3.9.1
+  flutter_markdown: ^0.7.4+3
+  google_fonts: ^6.2.1
 
 flutter:
   uses-material-design: true
