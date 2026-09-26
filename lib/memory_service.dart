@@ -8,10 +8,75 @@ class MemoryService {
   static const String _memoryFileName = 'talkgpt_memory.json';
   static const String _conversationsFileName = 'talkgpt_conversations.json';
   static const String _authFileName = '.talkgpt_auth';
+  static const String _prefsFileName = '.talkgpt_prefs';
+  static const String _storedPassFileName = '.talkgpt_stored_pass';
+
+  // ========== تفضيلات ==========
+
+  static Future<Map<String, dynamic>> loadPrefs() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$_prefsFileName');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        return jsonDecode(content) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return {'biometric_enabled': false};
+  }
+
+  static Future<void> savePrefs(Map<String, dynamic> prefs) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$_prefsFileName');
+      await file.writeAsString(jsonEncode(prefs));
+    } catch (_) {}
+  }
+
+  static Future<bool> isBiometricEnabled() async {
+    final prefs = await loadPrefs();
+    return prefs['biometric_enabled'] == true;
+  }
+
+  static Future<void> setBiometricEnabled(bool enabled) async {
+    final prefs = await loadPrefs();
+    prefs['biometric_enabled'] = enabled;
+    await savePrefs(prefs);
+  }
+
+  // ========== تخزين كلمة المرور للبصمة ==========
+
+  static Future<void> saveStoredPassword(String password) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$_storedPassFileName');
+      final encoded = base64Encode(utf8.encode(password));
+      await file.writeAsString(encoded);
+    } catch (_) {}
+  }
+
+  static Future<String?> getStoredPassword() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$_storedPassFileName');
+      if (await file.exists()) {
+        final encoded = await file.readAsString();
+        return utf8.decode(base64Decode(encoded));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> deleteStoredPassword() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$_storedPassFileName');
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
 
   // ========== كلمة المرور ==========
 
-  /// تحميل بيانات المصادقة (salt + hash)
   static Future<Map<String, String>?> getAuthData() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -24,7 +89,6 @@ class MemoryService {
     return null;
   }
 
-  /// تعيين كلمة مرور جديدة
   static Future<bool> setPassword(String password) async {
     try {
       final salt = CryptoService.generatePasswordSalt();
@@ -40,7 +104,6 @@ class MemoryService {
     }
   }
 
-  /// التحقق من كلمة المرور
   static Future<bool> verifyPassword(String password) async {
     final authData = await getAuthData();
     if (authData == null) return false;
@@ -48,32 +111,27 @@ class MemoryService {
     return hash == authData['hash'];
   }
 
-  /// هل تم تعيين كلمة مرور؟
   static Future<bool> hasPassword() async {
     return (await getAuthData()) != null;
   }
 
-  /// تغيير كلمة المرور (يتطلب كلمة المرور القديمة)
   static Future<bool> changePassword(String oldPassword, String newPassword) async {
     if (!await verifyPassword(oldPassword)) return false;
 
-    // فك تشفير البيانات بالقديمة
     final memory = await loadMemory(oldPassword);
     final conversations = await loadConversations(oldPassword);
 
-    // تعيين كلمة جديدة
     await setPassword(newPassword);
+    await saveStoredPassword(newPassword);
 
-    // إعادة تشفير البيانات بالجديدة
     await saveMemory(memory, newPassword);
     await saveConversations(conversations, newPassword);
 
     return true;
   }
 
-  // ========== الذاكرة الشخصية (مشفّرة) ==========
+  // ========== الذاكرة الشخصية ==========
 
-  /// تحميل الذاكرة - تتطلب كلمة المرور
   static Future<Map<String, dynamic>> loadMemory(String password) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -94,7 +152,6 @@ class MemoryService {
     };
   }
 
-  /// حفظ الذاكرة (مشفّرة)
   static Future<void> saveMemory(Map<String, dynamic> data, String password) async {
     try {
       data['lastUpdated'] = DateTime.now().toIso8601String();
@@ -111,7 +168,6 @@ class MemoryService {
     }
   }
 
-  /// إضافة معلومة جديدة
   static Future<void> addFact(String fact, String password) async {
     final memory = await loadMemory(password);
     final List<dynamic> facts = List<dynamic>.from(memory['facts'] ?? []);
@@ -122,7 +178,6 @@ class MemoryService {
     }
   }
 
-  /// استخراج المعلومات الشخصية من نص
   static Future<void> extractFacts(String text, String password) async {
     final patterns = [
       RegExp(r'اسمي\s+([^\n\.،,]+)'),
@@ -131,13 +186,9 @@ class MemoryService {
       RegExp(r'أعمل\s+([^\n\.،,]+)'),
       RegExp(r'عمري\s+([^\n\.،,]+)'),
       RegExp(r'أحب\s+([^\n\.،,]+)'),
-      RegExp(r'أكره\s+([^\n\.،,]+)'),
       RegExp(r'أسكن\s+في\s+([^\n\.،,]+)'),
       RegExp(r'My name is\s+([^\n\.،,]+)'),
       RegExp(r'I am\s+([^\n\.،,]+)'),
-      RegExp(r'I study\s+([^\n\.،,]+)'),
-      RegExp(r'I work\s+([^\n\.،,]+)'),
-      RegExp(r'I love\s+([^\n\.،,]+)'),
     ];
 
     for (final pattern in patterns) {
@@ -151,7 +202,6 @@ class MemoryService {
     }
   }
 
-  /// الحصول على الذاكرة كنص
   static Future<String> getMemoryAsText(String password) async {
     final memory = await loadMemory(password);
     final facts = List<dynamic>.from(memory['facts'] ?? []);
@@ -159,7 +209,7 @@ class MemoryService {
     return 'معلومات عني: ${facts.join(' | ')}';
   }
 
-  // ========== المحادثات (مشفّرة) ==========
+  // ========== المحادثات ==========
 
   static Future<List<Map<String, dynamic>>> loadConversations(String password) async {
     try {
