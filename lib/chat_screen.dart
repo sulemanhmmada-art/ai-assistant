@@ -133,6 +133,7 @@ class _ChatScreenState extends State<ChatScreen>
     setState(() {
       _currentConversationId = id;
     });
+    _scrollToBottom();
   }
 
   Future<void> _deleteConversation(String id) async {
@@ -434,6 +435,7 @@ class _ChatScreenState extends State<ChatScreen>
       textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         backgroundColor: const Color(0xFF0E1116),
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           backgroundColor: const Color(0xFF0E1116),
           elevation: 0,
@@ -692,7 +694,6 @@ class _ChatScreenState extends State<ChatScreen>
             ),
           ),
         ),
-        // 3 نقاط تحت الرسالة مباشرة — تتبع اتجاه النص
         Align(
           alignment: isUser
               ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
@@ -809,49 +810,55 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildInputBar() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      color: const Color(0xFF0E1116),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, color: Colors.white70, size: 28),
-            onPressed: _pickAndEditImage,
-            tooltip: _uploadImageText,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
-              child: TextField(
-                controller: _controller,
-                style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
-                maxLines: null,
-                minLines: 1,
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-                textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                decoration: InputDecoration(
-                  hintText: _hintText,
-                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                  filled: true,
-                  fillColor: const Color(0xFF1E1E1E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        color: const Color(0xFF0E1116),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, color: Colors.white70, size: 28),
+              onPressed: _pickAndEditImage,
+              tooltip: _uploadImageText,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48, maxHeight: 150),
+                child: TextField(
+                  controller: _controller,
+                  style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
+                  maxLines: null,
+                  minLines: 1,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                  onTap: () {
+                    _scrollToBottom();
+                  },
+                  decoration: InputDecoration(
+                    hintText: _hintText,
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                    filled: true,
+                    fillColor: const Color(0xFF1E1E1E),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.send, color: Color(0xFF10A37F)),
-            onPressed: _sendMessage,
-          ),
-        ],
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.send, color: Color(0xFF10A37F)),
+              onPressed: _sendMessage,
+            ),
+          ],
+        ),
       ),
     );
   }
