@@ -28,8 +28,10 @@ jobs:
       - name: Create Windows project
         run: flutter create --platforms=windows --project-name=talkgpt .
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Build Windows
         run: flutter build windows --release
