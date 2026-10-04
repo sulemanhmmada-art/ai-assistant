@@ -23,7 +23,7 @@ jobs:
         run: flutter pub get
 
       - name: Create Windows project
-        run: flutter create --platforms=windows .
+        run: flutter create --platforms=windows --project-name=talkgpt .
 
       - name: Build Windows
         run: flutter build windows --release
@@ -56,7 +56,7 @@ jobs:
         run: flutter pub get
 
       - name: Create Linux project
-        run: flutter create --platforms=linux .
+        run: flutter create --platforms=linux --project-name=talkgpt .
 
       - name: Build Linux
         run: flutter build linux --release
@@ -90,7 +90,7 @@ jobs:
         run: flutter pub get
 
       - name: Create Android project
-        run: flutter create --platforms=android .
+        run: flutter create --platforms=android --project-name=talkgpt .
 
       - name: Build APK
         run: flutter build apk --release
