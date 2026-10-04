@@ -28,6 +28,17 @@ jobs:
       - name: Create Windows project
         run: flutter create --platforms=windows --project-name=talkgpt .
 
+      - name: Fix CMakeLists generator
+        shell: pwsh
+        run: |
+          $file = "windows/CMakeLists.txt"
+          $content = Get-Content $file -Raw
+          $content = $content -replace 'Visual Studio 16 2019', 'Visual Studio 17 2022'
+          $content = $content -replace 'set\(CMAKE_GENERATOR "Visual Studio 16 2019"\)', ''
+          Set-Content $file -Value $content
+          Write-Host "CMakeLists.txt updated to use VS 2022"
+          Get-Content $file | Select-Object -First 20
+
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
