@@ -17,17 +17,18 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
-
-      - name: Enable Windows desktop
-        run: flutter config --enable-windows-desktop
+          cache: true
 
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Create Windows project
+        run: flutter create --platforms=windows .
+
       - name: Build Windows
         run: flutter build windows --release
 
-      - name: Upload Windows build
+      - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
           name: talkgpt-windows
@@ -44,22 +45,23 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+          cache: true
 
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Create Linux project
+        run: flutter create --platforms=linux .
 
       - name: Build Linux
         run: flutter build linux --release
 
-      - name: Upload Linux build
+      - name: Upload Linux
         uses: actions/upload-artifact@v4
         with:
           name: talkgpt-linux
@@ -82,9 +84,13 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+          cache: true
 
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Create Android project
+        run: flutter create --platforms=android .
 
       - name: Build APK
         run: flutter build apk --release
