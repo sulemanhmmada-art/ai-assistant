@@ -28,9 +28,8 @@ jobs:
       - name: Create Windows project
         run: flutter create --platforms=windows --project-name=talkgpt .
 
-      - name: Verify Visual Studio
-        run: flutter doctor -v
-        continue-on-error: true
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
 
       - name: Build Windows
         run: flutter build windows --release
