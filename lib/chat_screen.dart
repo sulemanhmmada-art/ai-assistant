@@ -11,7 +11,7 @@ import 'memory_service.dart';
 import 'settings_screen.dart';
 import 'snake_game.dart';
 import 'background_widgets.dart';
-import 'ai_orb_widget.dart';
+import 'background_widgets.dart';
 
 class ChatScreen extends StatefulWidget {
   final double fontSize;
