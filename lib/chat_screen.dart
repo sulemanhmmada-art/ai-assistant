@@ -11,7 +11,6 @@ import 'memory_service.dart';
 import 'settings_screen.dart';
 import 'snake_game.dart';
 import 'background_widgets.dart';
-import 'background_widgets.dart';
 
 class ChatScreen extends StatefulWidget {
   final double fontSize;
@@ -61,7 +60,7 @@ class _ChatScreenState extends State<ChatScreen>
   String get _welcomeText => _isArabic
       ? 'مرحباً بك في TalkGPT!\n\nأنا جاهز لمساعدتك اليوم.'
       : 'Welcome to TalkGPT!\n\nI am ready to help you today.';
-  String get _hintText => _isArabic ? 'اكتب رسالتك هنا...' : 'Type a message...';
+  String get _hintText => _isArabic ? 'اسأل أي شيء...' : 'Ask anything...';
   String get _settingsText => _isArabic ? 'الإعدادات' : 'Settings';
   String get _noConversationsText => _isArabic ? 'لا توجد محادثات' : 'No conversations';
 
@@ -459,11 +458,11 @@ class _ChatScreenState extends State<ChatScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFF1E1E1E).withOpacity(0.9),
-                  const Color(0xFF2E1A4A).withOpacity(0.9),
+                  const Color(0xFF1E1E2C).withOpacity(0.9),
+                  const Color(0xFF0D0E15).withOpacity(0.9),
                 ],
               ),
-              border: Border.all(color: const Color(0xFF764ba2).withOpacity(0.4)),
+              border: Border.all(color: const Color(0xFF3861FB).withOpacity(0.3)),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: SafeArea(
@@ -484,10 +483,10 @@ class _ChatScreenState extends State<ChatScreen>
                     leading: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF764ba2).withOpacity(0.2),
+                        color: const Color(0xFF3861FB).withOpacity(0.2),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.camera_alt, color: Color(0xFF764ba2)),
+                      child: const Icon(Icons.camera_alt, color: Color(0xFF3861FB)),
                     ),
                     title: Text(
                       _isArabic ? 'الكاميرا' : 'Camera',
@@ -502,10 +501,10 @@ class _ChatScreenState extends State<ChatScreen>
                     leading: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10A37F).withOpacity(0.2),
+                        color: const Color(0xFF00D2FF).withOpacity(0.2),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.photo_library, color: Color(0xFF10A37F)),
+                      child: const Icon(Icons.photo_library, color: Color(0xFF00D2FF)),
                     ),
                     title: Text(
                       _isArabic ? 'الاستديو' : 'Gallery',
@@ -534,33 +533,63 @@ class _ChatScreenState extends State<ChatScreen>
       textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
       child: Scaffold(
         resizeToAvoidBottomInset: true,
-        body: AppBackground(
-          type: _backgroundType,
-          child: SafeArea(
-            child: Column(
-              children: [
-                _buildGlassAppBar(messages),
-                Expanded(
-                  child: _currentConversationId == null
-                      ? _buildWelcomeScreen()
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          itemCount: messages.length + (_isLoading ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index == messages.length && _isLoading) {
-                              return _buildTypingIndicator();
-                            }
-                            final msg = messages[index];
-                            final isUser = msg['role'] == 'user';
-                            return _buildMessageBubble(msg, isUser, index);
-                          },
-                        ),
-                ),
-                _buildGlassInputBar(),
-              ],
+        backgroundColor: const Color(0xFF08090C), // أسود أعمق يطابق التصميم
+        body: Stack(
+          children: [
+            // خلفية الشاشة الأساسية
+            AppBackground(
+              type: _backgroundType,
+              child: const SizedBox.expand(),
             ),
-          ),
+            
+            // إضاءة أزرق كهربائي ساطع في أسفل الشاشة (تطابق التصميم المرجعي)
+            Positioned(
+              bottom: -100,
+              left: 0,
+              right: 0,
+              height: 350,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      const Color(0xFF2B52FF).withOpacity(0.45),
+                      const Color(0xFF001147).withOpacity(0.2),
+                      Colors.transparent,
+                    ],
+                    radius: 0.85,
+                  ),
+                ),
+              ),
+            ),
+
+            // واجهة المحادثة الرئيسية
+            SafeArea(
+              child: Column(
+                children: [
+                  _buildGlassAppBar(messages),
+                  Expanded(
+                    child: _currentConversationId == null
+                        ? _buildWelcomeScreen()
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            itemCount: messages.length + (_isLoading ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index == messages.length && _isLoading) {
+                                return _buildTypingIndicator();
+                              }
+                              final msg = messages[index];
+                              final isUser = msg['role'] == 'user';
+                              return _buildMessageBubble(msg, isUser, index);
+                            },
+                          ),
+                  ),
+                  _buildGlassInputBar(),
+                ],
+              ),
+            ),
+          ],
         ),
         drawer: _buildGlassDrawer(),
       ),
@@ -568,49 +597,39 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildGlassAppBar(List<Map<String, dynamic>> messages) {
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            border: Border(
-              bottom: BorderSide(
-                color: const Color(0xFF764ba2).withOpacity(0.3),
-                width: 1,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: Colors.transparent,
+      child: Row(
+        children: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white70),
+              onPressed: () => Scaffold.of(context).openDrawer(),
             ),
           ),
-          child: Row(
-            children: [
-              Builder(
-                builder: (context) => IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                ),
+          Expanded(
+            child: Text(
+              _currentConversation?['title'] ?? 'TalkGPT',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
               ),
-              Expanded(
-                child: Text(
-                  _currentConversation?['title'] ?? 'TalkGPT',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 17,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (_currentConversationId != null)
-                IconButton(
-                  icon: const Icon(Icons.add, color: Color(0xFF764ba2)),
-                  tooltip: _newChatText,
-                  onPressed: _createNewConversation,
-                ),
-            ],
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
+          if (_currentConversationId != null)
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white70),
+              tooltip: _newChatText,
+              onPressed: _createNewConversation,
+            )
+          else
+            const SizedBox(width: 48),
+        ],
       ),
     );
   }
@@ -624,23 +643,23 @@ class _ChatScreenState extends State<ChatScreen>
           children: [
             AiOrbWidget(
               state: _isLoading ? OrbState.thinking : OrbState.idle,
-              size: 160,
+              size: 180,
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 36),
             const Text(
               'TalkGPT',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 36,
+                fontSize: 34,
                 fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
+                letterSpacing: 1.1,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               _welcomeText,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16, color: Colors.white70, height: 1.6),
+              style: const TextStyle(fontSize: 15, color: Colors.white60, height: 1.5),
             ),
           ],
         ),
@@ -661,26 +680,26 @@ class _ChatScreenState extends State<ChatScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFF2E1A4A).withOpacity(0.95),
-                  const Color(0xFF0E1116).withOpacity(0.95),
+                  const Color(0xFF121420).withOpacity(0.95),
+                  const Color(0xFF08090C).withOpacity(0.98),
                 ],
               ),
               border: Border(
-                right: BorderSide(color: const Color(0xFF764ba2).withOpacity(0.4)),
+                right: BorderSide(color: Colors.white.withOpacity(0.1)),
               ),
             ),
             child: SafeArea(
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(20),
                     child: Row(
                       children: [
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF764ba2), Color(0xFF10A37F)],
+                              colors: [Color(0xFF2B52FF), Color(0xFF00D2FF)],
                             ),
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -695,17 +714,17 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Container(
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF764ba2), Color(0xFF10A37F)],
+                          colors: [Color(0xFF2B52FF), Color(0xFF00D2FF)],
                         ),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF764ba2).withOpacity(0.4),
-                            blurRadius: 15,
+                            color: const Color(0xFF2B52FF).withOpacity(0.3),
+                            blurRadius: 12,
                             spreadRadius: 1,
                           ),
                         ],
@@ -721,14 +740,14 @@ class _ChatScreenState extends State<ChatScreen>
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
                           foregroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 48),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          minimumSize: const Size(double.infinity, 50),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Divider(color: const Color(0xFF764ba2).withOpacity(0.3)),
+                  const SizedBox(height: 16),
+                  Divider(color: Colors.white.withOpacity(0.1)),
                   Expanded(
                     child: _conversations.isEmpty
                         ? Center(
@@ -744,7 +763,7 @@ class _ChatScreenState extends State<ChatScreen>
                               final isSelected = conv['id'] == _currentConversationId;
                               return ListTile(
                                 selected: isSelected,
-                                selectedTileColor: const Color(0xFF764ba2).withOpacity(0.2),
+                                selectedTileColor: const Color(0xFF2B52FF).withOpacity(0.15),
                                 leading: const Icon(Icons.chat_bubble_outline, color: Colors.white70, size: 20),
                                 title: Text(
                                   conv['title']?.toString() ?? _newChatText,
@@ -764,7 +783,7 @@ class _ChatScreenState extends State<ChatScreen>
                             },
                           ),
                   ),
-                  Divider(color: const Color(0xFF764ba2).withOpacity(0.3)),
+                  Divider(color: Colors.white.withOpacity(0.1)),
                   ListTile(
                     leading: const Icon(Icons.settings, color: Colors.white70),
                     title: Text(_settingsText, style: const TextStyle(color: Colors.white)),
@@ -785,92 +804,70 @@ class _ChatScreenState extends State<ChatScreen>
   Widget _buildMessageBubble(Map<String, dynamic> msg, bool isUser, int index) {
     final hasImage = msg['image_input'] != null;
 
-    return Column(
-      crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        Align(
-          alignment: isUser
-              ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
-              : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                padding: const EdgeInsets.all(14),
-                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
-                decoration: BoxDecoration(
-                  gradient: isUser
-                      ? LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            const Color(0xFF764ba2).withOpacity(0.6),
-                            const Color(0xFF5B3A8E).withOpacity(0.4),
-                          ],
-                        )
-                      : LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white.withOpacity(0.12),
-                            Colors.white.withOpacity(0.05),
-                            const Color(0xFF10A37F).withOpacity(0.08),
-                          ],
-                        ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: isUser
+                ? (_isArabic ? Alignment.centerRight : Alignment.centerLeft)
+                : (_isArabic ? Alignment.centerLeft : Alignment.centerRight),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
+                  decoration: BoxDecoration(
                     color: isUser
-                        ? const Color(0xFF764ba2).withOpacity(0.6)
-                        : Colors.white.withOpacity(0.15),
-                    width: 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
+                        ? const Color(0xFF2B52FF).withOpacity(0.25)
+                        : Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
                       color: isUser
-                          ? const Color(0xFF764ba2).withOpacity(0.3)
-                          : const Color(0xFF10A37F).withOpacity(0.15),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
+                          ? const Color(0xFF2B52FF).withOpacity(0.5)
+                          : Colors.white.withOpacity(0.12),
+                      width: 1,
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (hasImage)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(
-                          base64Decode(msg['image_input'] as String),
-                          fit: BoxFit.cover,
-                          width: double.infinity,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasImage)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            base64Decode(msg['image_input'] as String),
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                          ),
                         ),
-                      ),
-                    if (hasImage && (msg['content']?.toString().isNotEmpty ?? false))
-                      const SizedBox(height: 8),
-                    if (!hasImage || (msg['content']?.toString().isNotEmpty ?? false))
-                      isUser
-                          ? SelectableText(
-                              msg['content']?.toString() ?? '',
-                              style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
-                              textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-                            )
-                          : MarkdownBody(
-                              data: msg['content']?.toString() ?? '',
-                              selectable: true,
-                              styleSheet: MarkdownStyleSheet(
-                                p: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.6),
+                      if (hasImage && (msg['content']?.toString().isNotEmpty ?? false))
+                        const SizedBox(height: 8),
+                      if (!hasImage || (msg['content']?.toString().isNotEmpty ?? false))
+                        isUser
+                            ? SelectableText(
+                                msg['content']?.toString() ?? '',
+                                style: TextStyle(color: Colors.white, fontSize: widget.fontSize, height: 1.5),
+                                textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+                              )
+                            : MarkdownBody(
+                                data: msg['content']?.toString() ?? '',
+                                selectable: true,
+                                styleSheet: MarkdownStyleSheet(
+                                  p: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: widget.fontSize, height: 1.5),
+                                ),
                               ),
-                            ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -878,11 +875,18 @@ class _ChatScreenState extends State<ChatScreen>
     return Align(
       alignment: _isArabic ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.08)),
+        ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const AiOrbWidget(state: OrbState.thinking, size: 40),
-            const SizedBox(width: 12),
+            const AiOrbWidget(state: OrbState.thinking, size: 28),
+            const SizedBox(width: 10),
             Text(
               _isArabic ? "جاري التفكير..." : "Thinking...",
               style: const TextStyle(color: Colors.white60, fontSize: 13),
@@ -893,50 +897,95 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  /// شريط الإدخال العائم المطابق تماماً للتصميم المرجعي (كبسولة زجاجية متوهجة)
   Widget _buildGlassInputBar() {
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.03),
-            border: Border(
-              top: BorderSide(color: const Color(0xFF764ba2).withOpacity(0.3)),
-            ),
-          ),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.add, color: Colors.white, size: 26),
-                onPressed: _showAttachmentOptions,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(35),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161822).withOpacity(0.65),
+              borderRadius: BorderRadius.circular(35),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.15),
+                width: 1,
               ),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: const Color(0xFF764ba2).withOpacity(0.3)),
-                  ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2B52FF).withOpacity(0.25),
+                  blurRadius: 25,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // زر إضافة المرفقات (+)
+                IconButton(
+                  icon: const Icon(Icons.add, color: Colors.white70, size: 24),
+                  onPressed: _showAttachmentOptions,
+                ),
+
+                // حقل النص الرئيسي
+                Expanded(
                   child: TextField(
                     controller: _controller,
                     focusNode: _inputFocus,
                     style: TextStyle(color: Colors.white, fontSize: widget.fontSize),
                     decoration: InputDecoration(
                       hintText: _hintText,
-                      hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.35),
+                        fontSize: 15,
+                      ),
                       border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+
+                // أيقونة الصوت المضيئة (أسلوب التصميم المرجعي)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.mic,
+                    color: Color(0xFF00D2FF),
+                    size: 20,
+                  ),
+                ),
+
+                // زر الإرسال الإشعاعي
+                GestureDetector(
+                  onTap: _sendMessage,
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 4, right: 4),
+                    padding: const EdgeInsets.all(10),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF2B52FF), Color(0xFF00D2FF)],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_upward_rounded,
+                      color: Colors.white,
+                      size: 20,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.send, color: Color(0xFF10A37F), size: 26),
-                onPressed: _sendMessage,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
