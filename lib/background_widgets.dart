@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-// --- 1. خلفية التطبيق الحيوية (AppBackground) ---
+// --- 1. خلفية التطبيق الحيوية العملاقة (AppBackground) ---
 class AppBackground extends StatelessWidget {
   final Widget child;
   final String type;
@@ -20,18 +20,47 @@ class AppBackground extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF08090C),
-            Color(0xFF0D0E15),
-            Color(0xFF050608),
+            Color(0xFF070913),
+            Color(0xFF0B0E1E),
+            Color(0xFF05060C),
           ],
         ),
       ),
-      child: child,
+      child: Stack(
+        children: [
+          // إضاءات ضبابية خلفية لتعميق المشهد البصري
+          Positioned(
+            top: -100,
+            right: -80,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF00D2FF).withOpacity(0.08),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -120,
+            left: -80,
+            child: Container(
+              width: 350,
+              height: 350,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF6C5CE7).withOpacity(0.12),
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
     );
   }
 }
 
-// --- 2. الهالة المضيئة التفاعلية (AiOrbWidget) ---
+// --- 2. الهالة المضيئة السائلة العضوية (AiOrbWidget) ---
 enum OrbState { idle, thinking, speaking }
 
 class AiOrbWidget extends StatefulWidget {
@@ -41,7 +70,7 @@ class AiOrbWidget extends StatefulWidget {
   const AiOrbWidget({
     super.key,
     this.state = OrbState.idle,
-    this.size = 140.0,
+    this.size = 180.0,
   });
 
   @override
@@ -57,7 +86,7 @@ class _AiOrbWidgetState extends State<AiOrbWidget>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 6),
+      duration: const Duration(seconds: 8),
     )..repeat();
   }
 
@@ -70,8 +99,8 @@ class _AiOrbWidgetState extends State<AiOrbWidget>
   @override
   Widget build(BuildContext context) {
     double speedMultiplier = 1.0;
-    if (widget.state == OrbState.thinking) speedMultiplier = 2.2;
-    if (widget.state == OrbState.speaking) speedMultiplier = 1.6;
+    if (widget.state == OrbState.thinking) speedMultiplier = 2.4;
+    if (widget.state == OrbState.speaking) speedMultiplier = 1.7;
 
     return AnimatedBuilder(
       animation: _controller,
@@ -81,7 +110,7 @@ class _AiOrbWidgetState extends State<AiOrbWidget>
           width: widget.size,
           height: widget.size,
           child: CustomPaint(
-            painter: _OrbPainter(
+            painter: _FluidOrbPainter(
               progress: progress,
               state: widget.state,
             ),
@@ -92,52 +121,51 @@ class _AiOrbWidgetState extends State<AiOrbWidget>
   }
 }
 
-class _OrbPainter extends CustomPainter {
+class _FluidOrbPainter extends CustomPainter {
   final double progress;
   final OrbState state;
 
-  _OrbPainter({required this.progress, required this.state});
+  _FluidOrbPainter({required this.progress, required this.state});
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final baseRadius = size.width * 0.35;
+    final baseRadius = size.width * 0.38;
     final angle = progress * 2 * math.pi;
 
-    // 1. التوهج الخارجي الكبير (Ambient Background Glow)
-    final outerGlowRadius = baseRadius * 1.8;
-    final outerGlowPaint = Paint()
+    // A. التوهج الخارجي الساطع العميق (Aura Glow)
+    final auraPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          const Color(0xFF2B52FF).withOpacity(state == OrbState.thinking ? 0.5 : 0.35),
-          const Color(0xFF00D2FF).withOpacity(0.15),
+          const Color(0xFF00D2FF).withOpacity(state == OrbState.thinking ? 0.45 : 0.28),
+          const Color(0xFF6C5CE7).withOpacity(0.2),
           Colors.transparent,
         ],
-        stops: const [0.2, 0.65, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: outerGlowRadius))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25);
+        stops: const [0.3, 0.7, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: baseRadius * 1.8))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30);
 
-    canvas.drawCircle(center, outerGlowRadius, outerGlowPaint);
+    canvas.drawCircle(center, baseRadius * 1.6, auraPaint);
 
-    // 2. النواة السائلة والتموجات الهارمونية (Liquid Dynamic Core)
+    // B. رسم الشكل العضوي السائل (Fluid Organic Blob Path)
     final path = Path();
-    const int wavePoints = 180;
-    final double pulse = math.sin(angle * 2) * 0.05;
+    const int points = 360;
 
-    for (int i = 0; i <= wavePoints; i++) {
-      final theta = (i / wavePoints) * 2 * math.pi;
-      
-      // معادلة التموج ثلاثية الأبعاد
-      double waveModifier = math.sin(theta * 3 + angle) * 0.08 +
-          math.cos(theta * 5 - angle * 2) * 0.04;
+    for (int i = 0; i <= points; i++) {
+      final theta = (i / points) * 2 * math.pi;
+
+      // موجات هارمونية مركية تُنشئ الشكل المنساب العضوي
+      double wave = math.sin(theta * 3 + angle * 2) * 0.12 +
+          math.cos(theta * 2 - angle) * 0.08 +
+          math.sin(theta * 5 + angle * 3) * 0.04;
 
       if (state == OrbState.thinking) {
-        waveModifier += math.sin(theta * 8 + angle * 4) * 0.06;
+        wave += math.sin(theta * 7 + angle * 5) * 0.07;
       } else if (state == OrbState.speaking) {
-        waveModifier += math.cos(theta * 4 + angle * 3) * 0.09;
+        wave += math.cos(theta * 4 + angle * 3) * 0.09;
       }
 
-      final r = baseRadius * (1.0 + pulse + waveModifier);
+      final r = baseRadius * (1.0 + wave);
       final x = center.dx + r * math.cos(theta);
       final y = center.dy + r * math.sin(theta);
 
@@ -149,16 +177,19 @@ class _OrbPainter extends CustomPainter {
     }
     path.close();
 
-    // تدرج النواة الداخلي
+    // C. تدرج النواة السائلة الذكية (Liquid Mesh Gradient)
     final coreGradient = SweepGradient(
+      center: Alignment.center,
       transform: GradientRotation(angle),
       colors: const [
-        Color(0xFF2B52FF),
+        Color(0xFF20B2AA),
         Color(0xFF00D2FF),
-        Color(0xFF6C5CE7),
-        Color(0xFF00F2FE),
-        Color(0xFF2B52FF),
+        Color(0xFF3B82F6),
+        Color(0xFF8B5CF6),
+        Color(0xFFD946EF),
+        Color(0xFF00D2FF),
       ],
+      stops: const [0.0, 0.2, 0.45, 0.7, 0.88, 1.0],
     );
 
     final corePaint = Paint()
@@ -167,46 +198,26 @@ class _OrbPainter extends CustomPainter {
 
     canvas.drawPath(path, corePaint);
 
-    // 3. طبقة الضوء الساطع والعمق الزجاجي (Specular Energy Light)
+    // D. انعكاس المركز المضيء العالي الانكسار (High-Specular Inner Highlight)
+    final specularOffset = Offset(
+      center.dx + math.cos(angle * 1.2) * (baseRadius * 0.22),
+      center.dy + math.sin(angle * 1.2) * (baseRadius * 0.22),
+    );
+
     final highlightPaint = Paint()
       ..shader = RadialGradient(
-        center: Alignment(-0.35 + math.cos(angle) * 0.1, -0.35 + math.sin(angle) * 0.1),
-        radius: 0.6,
         colors: [
-          Colors.white.withOpacity(0.85),
-          Colors.white.withOpacity(0.1),
+          Colors.white.withOpacity(0.95),
+          Colors.white.withOpacity(0.25),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.45, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: baseRadius))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        stops: const [0.0, 0.4, 1.0],
+      ).createShader(Rect.fromCircle(center: specularOffset, radius: baseRadius * 0.55))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
 
-    canvas.drawCircle(center, baseRadius * 0.85, highlightPaint);
-
-    // 4. حلقات الطاقة المدارية (Orbital Energy Rings)
-    final ringPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..shader = SweepGradient(
-        transform: GradientRotation(-angle * 1.5),
-        colors: [
-          Colors.white.withOpacity(0.8),
-          const Color(0xFF00D2FF).withOpacity(0.3),
-          Colors.transparent,
-          Colors.white.withOpacity(0.6),
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: baseRadius * 1.2));
-
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(angle * 0.5);
-    canvas.scale(1.2, 0.85); // إعطاء شكل مداري بيضاوي
-    canvas.drawCircle(Offset.zero, baseRadius * 0.95, ringPaint);
-    canvas.restore();
+    canvas.drawCircle(specularOffset, baseRadius * 0.45, highlightPaint);
   }
 
   @override
-  bool shouldRepaint(covariant _OrbPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.state != state;
-  }
+  bool shouldRepaint(covariant _FluidOrbPainter oldDelegate) => true;
 }
