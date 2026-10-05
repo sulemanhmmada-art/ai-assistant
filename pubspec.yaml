@@ -20,6 +20,7 @@ dependencies:
   flutter_markdown: ^0.7.4+3
   google_fonts: ^6.2.1
   http: ^1.2.0
+  flutter_animate: ^4.5.0 # إضافة حزمة الأنيميشن
 
 flutter:
   uses-material-design: true
