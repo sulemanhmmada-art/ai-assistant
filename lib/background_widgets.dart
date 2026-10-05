@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-// --- 1. خلفية التطبيق المطلوبة (AppBackground) ---
+// --- 1. خلفية التطبيق الحيوية (AppBackground) ---
 class AppBackground extends StatelessWidget {
   final Widget child;
   final String type;
@@ -17,12 +17,12 @@ class AppBackground extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF0F0C20),
-            Color(0xFF15102A),
-            Color(0xFF0A0814),
+            Color(0xFF08090C),
+            Color(0xFF0D0E15),
+            Color(0xFF050608),
           ],
         ),
       ),
@@ -57,7 +57,7 @@ class _AiOrbWidgetState extends State<AiOrbWidget>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 6),
     )..repeat();
   }
 
@@ -70,8 +70,8 @@ class _AiOrbWidgetState extends State<AiOrbWidget>
   @override
   Widget build(BuildContext context) {
     double speedMultiplier = 1.0;
-    if (widget.state == OrbState.thinking) speedMultiplier = 2.5;
-    if (widget.state == OrbState.speaking) speedMultiplier = 1.8;
+    if (widget.state == OrbState.thinking) speedMultiplier = 2.2;
+    if (widget.state == OrbState.speaking) speedMultiplier = 1.6;
 
     return AnimatedBuilder(
       animation: _controller,
@@ -101,49 +101,112 @@ class _OrbPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2.5;
+    final baseRadius = size.width * 0.35;
+    final angle = progress * 2 * math.pi;
 
-    // الطبقة الأولى: الهالة الخارجية المضيئة
-    final glowPaint = Paint()
+    // 1. التوهج الخارجي الكبير (Ambient Background Glow)
+    final outerGlowRadius = baseRadius * 1.8;
+    final outerGlowPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          const Color(0xFF10A37F).withOpacity(0.6),
-          const Color(0xFF764BA2).withOpacity(0.3),
+          const Color(0xFF2B52FF).withOpacity(state == OrbState.thinking ? 0.5 : 0.35),
+          const Color(0xFF00D2FF).withOpacity(0.15),
           Colors.transparent,
         ],
-        stops: const [0.2, 0.7, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: radius * 1.6))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+        stops: const [0.2, 0.65, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: outerGlowRadius))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25);
 
-    canvas.drawCircle(center, radius * (1.1 + math.sin(progress * 2 * math.pi) * 0.08), glowPaint);
+    canvas.drawCircle(center, outerGlowRadius, outerGlowPaint);
 
-    // الطبقة الثانية: نواة الكرة المتوهجة
+    // 2. النواة السائلة والتموجات الهارمونية (Liquid Dynamic Core)
+    final path = Path();
+    const int wavePoints = 180;
+    final double pulse = math.sin(angle * 2) * 0.05;
+
+    for (int i = 0; i <= wavePoints; i++) {
+      final theta = (i / wavePoints) * 2 * math.pi;
+      
+      // معادلة التموج ثلاثية الأبعاد
+      double waveModifier = math.sin(theta * 3 + angle) * 0.08 +
+          math.cos(theta * 5 - angle * 2) * 0.04;
+
+      if (state == OrbState.thinking) {
+        waveModifier += math.sin(theta * 8 + angle * 4) * 0.06;
+      } else if (state == OrbState.speaking) {
+        waveModifier += math.cos(theta * 4 + angle * 3) * 0.09;
+      }
+
+      final r = baseRadius * (1.0 + pulse + waveModifier);
+      final x = center.dx + r * math.cos(theta);
+      final y = center.dy + r * math.sin(theta);
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+
+    // تدرج النواة الداخلي
     final coreGradient = SweepGradient(
-      transform: GradientRotation(progress * 2 * math.pi),
+      transform: GradientRotation(angle),
       colors: const [
-        Color(0xFF764BA2),
-        Color(0xFF10A37F),
+        Color(0xFF2B52FF),
         Color(0xFF00D2FF),
-        Color(0xFF764BA2),
+        Color(0xFF6C5CE7),
+        Color(0xFF00F2FE),
+        Color(0xFF2B52FF),
       ],
     );
 
     final corePaint = Paint()
-      ..shader = coreGradient.createShader(Rect.fromCircle(center: center, radius: radius))
+      ..shader = coreGradient.createShader(Rect.fromCircle(center: center, radius: baseRadius))
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(center, radius, corePaint);
+    canvas.drawPath(path, corePaint);
 
-    // الطبقة الثالثة: حلقات الطاقة الداخلية
+    // 3. طبقة الضوء الساطع والعمق الزجاجي (Specular Energy Light)
+    final highlightPaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment(-0.35 + math.cos(angle) * 0.1, -0.35 + math.sin(angle) * 0.1),
+        radius: 0.6,
+        colors: [
+          Colors.white.withOpacity(0.85),
+          Colors.white.withOpacity(0.1),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.45, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: baseRadius))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    canvas.drawCircle(center, baseRadius * 0.85, highlightPaint);
+
+    // 4. حلقات الطاقة المدارية (Orbital Energy Rings)
     final ringPaint = Paint()
-      ..color = Colors.white.withOpacity(0.4)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.5
+      ..shader = SweepGradient(
+        transform: GradientRotation(-angle * 1.5),
+        colors: [
+          Colors.white.withOpacity(0.8),
+          const Color(0xFF00D2FF).withOpacity(0.3),
+          Colors.transparent,
+          Colors.white.withOpacity(0.6),
+        ],
+      ).createShader(Rect.fromCircle(center: center, radius: baseRadius * 1.2));
 
-    final ringRadius = radius * (0.6 + math.cos(progress * 2 * math.pi) * 0.15);
-    canvas.drawCircle(center, ringRadius, ringPaint);
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle * 0.5);
+    canvas.scale(1.2, 0.85); // إعطاء شكل مداري بيضاوي
+    canvas.drawCircle(Offset.zero, baseRadius * 0.95, ringPaint);
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _OrbPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _OrbPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.state != state;
+  }
 }
