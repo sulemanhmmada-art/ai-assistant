@@ -1,6 +1,37 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
+// --- 1. خلفية التطبيق المطلوبة (AppBackground) ---
+class AppBackground extends StatelessWidget {
+  final Widget child;
+  final String type;
+
+  const AppBackground({
+    super.key,
+    required this.child,
+    this.type = 'particles',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0F0C20),
+            Color(0xFF15102A),
+            Color(0xFF0A0814),
+          ],
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+// --- 2. الهالة المضيئة التفاعلية (AiOrbWidget) ---
 enum OrbState { idle, thinking, speaking }
 
 class AiOrbWidget extends StatefulWidget {
