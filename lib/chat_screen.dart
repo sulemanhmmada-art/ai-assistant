@@ -100,7 +100,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                         SizedBox(width: 6),
-                        Icon(Icons.sparkles, color: Color(0xFF00D2FF), size: 18),
+                        Icon(Icons.auto_awesome, color: Color(0xFF00D2FF), size: 18),
                       ],
                     ),
                     IconButton(
@@ -314,7 +314,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: const Color(0xFF00D2FF).withOpacity(0.2),
                     border: Border.all(color: const Color(0xFF00D2FF).withOpacity(0.5)),
                   ),
-                  child: const Icon(Icons.sparkles, color: Color(0xFF00D2FF), size: 14),
+                  child: const Icon(Icons.auto_awesome, color: Color(0xFF00D2FF), size: 14),
                 ),
                 const SizedBox(width: 8),
               ],
