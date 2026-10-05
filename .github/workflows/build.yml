@@ -15,19 +15,39 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.0'
           channel: 'stable'
+          cache: true
 
-      - name: Enable Windows desktop
+      - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
 
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Create Windows project
+        run: flutter create --platforms=windows --project-name=talkgpt .
+
+      - name: Fix CMakeLists generator
+        shell: pwsh
+        run: |
+          $file = "windows/CMakeLists.txt"
+          $content = Get-Content $file -Raw
+          $content = $content -replace 'Visual Studio 16 2019', 'Visual Studio 17 2022'
+          $content = $content -replace 'set\(CMAKE_GENERATOR "Visual Studio 16 2019"\)', ''
+          Set-Content $file -Value $content
+          Write-Host "CMakeLists.txt updated to use VS 2022"
+          Get-Content $file | Select-Object -First 20
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Build Windows
         run: flutter build windows --release
 
-      - name: Upload Windows build
+      - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
           name: talkgpt-windows
@@ -42,24 +62,25 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.0'
           channel: 'stable'
+          cache: true
 
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Create Linux project
+        run: flutter create --platforms=linux --project-name=talkgpt .
 
       - name: Build Linux
         run: flutter build linux --release
 
-      - name: Upload Linux build
+      - name: Upload Linux
         uses: actions/upload-artifact@v4
         with:
           name: talkgpt-linux
@@ -80,11 +101,15 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.0'
           channel: 'stable'
+          cache: true
 
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Create Android project
+        run: flutter create --platforms=android --project-name=talkgpt .
 
       - name: Build APK
         run: flutter build apk --release
